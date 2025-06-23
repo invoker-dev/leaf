@@ -7,12 +7,12 @@
 [submodule "lib/vk-bootstrap"]
 	path = lib/vk-bootstrap
 	url = https://github.com/charles-lunarg/vk-bootstrap
-[submodule "lib/fastgltf"]
-	path = lib/fastgltf
-	url = https://github.com/spnda/fastgltf
 [submodule "lib/imgui"]
 	path = lib/imgui
 	url = https://github.com/ocornut/imgui
+[submodule "lib/fastgltf"]
+	path = lib/fastgltf
+	url = https://github.com/spnda/fastgltf
 [submodule "lib/stb"]
 	path = lib/stb
 	url = https://github.com/nothings/stb
