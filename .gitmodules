@@ -1,18 +1,18 @@
-[submodule "extern/vma"]
-	path = extern/vma
+[submodule "lib/vma"]
+	path = lib/vma
 	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
-[submodule "extern/volk"]
-	path = extern/volk
+[submodule "lib/volk"]
+	path = lib/volk
 	url = https://github.com/zeux/volk
-[submodule "extern/vk-bootstrap"]
-	path = extern/vk-bootstrap
+[submodule "lib/vk-bootstrap"]
+	path = lib/vk-bootstrap
 	url = https://github.com/charles-lunarg/vk-bootstrap
-[submodule "extern/fastgltf"]
-	path = extern/fastgltf
+[submodule "lib/fastgltf"]
+	path = lib/fastgltf
 	url = https://github.com/spnda/fastgltf
-[submodule "extern/imgui"]
-	path = extern/imgui
+[submodule "lib/imgui"]
+	path = lib/imgui
 	url = https://github.com/ocornut/imgui
-[submodule "extern/stb"]
-	path = extern/stb
+[submodule "lib/stb"]
+	path = lib/stb
 	url = https://github.com/nothings/stb

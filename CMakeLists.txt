@@ -1,5 +1,14 @@
-cmake_minimum_required(VERSION 4.0)
-project(exort LANGUAGES CXX)
+
+cmake_minimum_required(VERSION 3.27)
+
+execute_process(
+    COMMAND git describe --tags
+    OUTPUT_VARIABLE GIT_VERSION
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+project(leaf LANGUAGES CXX)
+add_compile_definitions(LEAF_VERSION=\"${GIT_VERSION}\")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED   ON)
@@ -26,31 +35,30 @@ find_package(fmt    REQUIRED)
 # ------------------------------------------------------
 # Dependencies -- Submodules
 # ------------------------------------------------------
-add_subdirectory(extern/volk)
-add_subdirectory(extern/vk-bootstrap)
-add_subdirectory(extern/fastgltf)
-add_subdirectory(extern/vma)
+add_subdirectory(lib/volk)
+add_subdirectory(lib/vk-bootstrap)
+add_subdirectory(lib/fastgltf)
+add_subdirectory(lib/vma)
 
 target_compile_options(volk         PRIVATE -w)
 target_compile_options(vk-bootstrap PRIVATE -w)
 target_compile_options(fastgltf     PRIVATE -w)
-target_compile_options(vma          PRIVATE -w)
 
 # ------------------------------------------------------
 # Dependencies -- static libraries
 # ------------------------------------------------------
 add_library(imgui
-    ./extern/imgui/imgui.cpp
-    ./extern/imgui/imgui_draw.cpp
-    ./extern/imgui/imgui_tables.cpp
-    ./extern/imgui/imgui_widgets.cpp
-    ./extern/imgui/backends/imgui_impl_vulkan.cpp
-    ./extern/imgui/backends/imgui_impl_sdl3.cpp
+    ./lib/imgui/imgui.cpp
+    ./lib/imgui/imgui_draw.cpp
+    ./lib/imgui/imgui_tables.cpp
+    ./lib/imgui/imgui_widgets.cpp
+    ./lib/imgui/backends/imgui_impl_vulkan.cpp
+    ./lib/imgui/backends/imgui_impl_sdl3.cpp
 )
 
 target_include_directories(imgui PUBLIC
-    extern/imgui
-    extern/imgui/backends
+    lib/imgui
+    lib/imgui/backends
 )
 
 target_compile_options(imgui PRIVATE -w)
@@ -61,7 +69,6 @@ file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS "src/*.cpp")
 
 add_executable(${PROJECT_NAME} ${SOURCES})
 
-# ------------------------------------------------------
 target_include_directories(${PROJECT_NAME} PRIVATE
     ./src/include
 )
@@ -78,4 +85,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     vk-bootstrap
     fastgltf
     imgui
+    GPUOpen::VulkanMemoryAllocator
 )
+
