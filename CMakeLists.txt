@@ -62,6 +62,7 @@ target_include_directories(imgui PUBLIC
 )
 
 target_compile_options(imgui PRIVATE -w)
+
 # ------------------------------------------------------
 # Main executable
 # ------------------------------------------------------
@@ -87,4 +88,5 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     imgui
     GPUOpen::VulkanMemoryAllocator
 )
+
 
