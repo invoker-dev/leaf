@@ -1,0 +1,24 @@
+# Build artifacts
+/build/
+/out/
+/bin/
+/obj/
+/CMakeFiles/
+/CMakeCache.txt
+/Makefile
+/cmake_install.cmake
+compile_commands.json
+
+# Linux
+*.so
+*.a
+*.out
+*.o
+
+# Vulkan shader binaries
+*.spv
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
