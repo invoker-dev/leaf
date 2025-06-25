@@ -6,10 +6,14 @@
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
 #include <VkBootstrap.h>
+#include <fmt/base.h>
 #include <fmt/printf.h>
 #include <leafEngine.h>
+#include <vulkan/vulkan_core.h>
 
 constexpr bool useValidationLayers = true;
+
+constexpr int framesInFlight = 2;
 
 LeafEngine::LeafEngine() {
 
@@ -22,10 +26,10 @@ LeafEngine::LeafEngine() {
   int w, h;
   SDL_GetWindowSize(init.window, &w, &h);
   fmt::println("Window size: {} x {}", w, h);
-
-
 }
 LeafEngine::~LeafEngine() {
+
+  vkb::destroy_swapchain(init.swapchain);
   vkb::destroy_device(init.device);
   vkb::destroy_surface(init.instance, init.surface);
   vkb::destroy_instance(init.instance);
@@ -36,7 +40,8 @@ LeafEngine::~LeafEngine() {
 void LeafEngine::createSDLWindow() {
 
   init.window = SDL_CreateWindow("LeafEngine", init.windowExtent.width,
-                                 init.windowExtent.height, SDL_WINDOW_VULKAN | SDL_WINDOW_BORDERLESS);
+                                 init.windowExtent.height,
+                                 SDL_WINDOW_VULKAN | SDL_WINDOW_BORDERLESS);
   if (!init.window) {
     fmt::println("failed to init SDL window: {}", SDL_GetError());
     std::exit(-1);
@@ -47,9 +52,7 @@ void LeafEngine::createSDLWindow() {
     std::exit(-1);
   }
 
-  fmt::println("Window pointer: {}", (void*)init.window);
-
-
+  fmt::println("Window pointer: {}", (void *)init.window);
 }
 
 void LeafEngine::initVulkan() {
@@ -65,11 +68,13 @@ void LeafEngine::initVulkan() {
 
   if (!returnedInstance) {
     fmt::println("Failed to build vkbInstance: {}",
-                returnedInstance.error().message());
+                 returnedInstance.error().message());
     std::exit(-1);
   }
 
   init.instance = returnedInstance.value();
+
+  init.instanceDispatchTable = init.instance.make_table();
 
   bool result = SDL_Vulkan_CreateSurface(init.window, init.instance.instance,
                                          nullptr, &init.surface);
@@ -98,7 +103,7 @@ void LeafEngine::initVulkan() {
 
   if (!returnedPhysicalDevice) {
     fmt::println("Failed to find physical device: {}",
-                returnedPhysicalDevice.error().message());
+                 returnedPhysicalDevice.error().message());
     std::exit(-1);
   }
 
@@ -108,23 +113,70 @@ void LeafEngine::initVulkan() {
   auto               returnedDevice = deviceBuilder.build();
 
   if (!returnedDevice) {
-    fmt::println("Failed to build device: {}", returnedDevice.error().message());
+    fmt::println("Failed to build device: {}",
+                 returnedDevice.error().message());
     std::exit(-1);
   }
-  init.device = returnedDevice.value();
+  init.device        = returnedDevice.value();
+  init.dispatchTable = init.device.make_table();
 }
 
 void LeafEngine::getQueues() {
   auto graphicsQueue = init.device.get_queue(vkb::QueueType::graphics);
   if (!graphicsQueue.has_value()) {
     fmt::println("failed to get graphics queue: {}",
-                graphicsQueue.error().message());
+                 graphicsQueue.error().message());
     std::exit(-1);
   }
   auto presentQueue = init.device.get_queue(vkb::QueueType::present);
   if (!presentQueue.has_value()) {
     fmt::println("failed to get present queue: {}",
-                presentQueue.error().message());
+                 presentQueue.error().message());
     std::exit(-1);
   }
+}
+
+void LeafEngine::createSwapchain() {
+
+  vkb::SwapchainBuilder swapchain_builder{init.device};
+  auto                  returnedSwapchain =
+      swapchain_builder.set_old_swapchain(init.swapchain).build();
+
+  if (!returnedSwapchain) {
+    fmt::println("failed to build swapchain: {}",
+                 returnedSwapchain.error().message());
+    std::exit(-1);
+  }
+  vkb::destroy_swapchain(init.swapchain);
+  init.swapchain = returnedSwapchain.value();
+}
+
+void LeafEngine::createCommandPool() {
+  VkCommandPoolCreateInfo poolInfo = {};
+
+  poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+  poolInfo.queueFamilyIndex =
+      init.device.get_queue_index(vkb::QueueType::graphics).value();
+  poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+
+  if (init.dispatchTable.createCommandPool(
+          &poolInfo, nullptr, &renderData.commandPool) != VK_SUCCESS) {
+    fmt::println("Failed to create command pool");
+    std::exit(-1);
+  }
+}
+void LeafEngine::createCommandBuffers() {
+  VkCommandBufferAllocateInfo allocInfo = {};
+  allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+  allocInfo.commandPool = renderData.commandPool;
+  allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+  allocInfo.commandBufferCount = framesInFlight;
+
+  renderData.commandBuffers.resize(framesInFlight);
+  VkResult result = vkAllocateCommandBuffers(init.device, &allocInfo, renderData.commandBuffers.data());
+  if (result != VK_SUCCESS) {
+    fmt::println("failed to allocate command buffers");
+
+  }
+
 }

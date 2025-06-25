@@ -1,4 +1,5 @@
 #pragma once
+#include "VkBootstrapDispatch.h"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_video.h>
 #include <VkBootstrap.h>
@@ -7,13 +8,15 @@
 #include <vulkan/vulkan_core.h>
 
 struct Init {
-  vkb::Instance       instance;
-  vkb::PhysicalDevice physicalDevice;
-  vkb::Device         device;
-  VkExtent2D          windowExtent;
-  VkSurfaceKHR        surface;
-  vkb::Swapchain      swapchain;
-  SDL_Window         *window;
+  vkb::Instance              instance;
+  vkb::PhysicalDevice        physicalDevice;
+  vkb::Device                device;
+  vkb::Swapchain             swapchain;
+  vkb::InstanceDispatchTable instanceDispatchTable;
+  vkb::DispatchTable         dispatchTable;
+  VkExtent2D                 windowExtent;
+  VkSurfaceKHR               surface;
+  SDL_Window                *window;
 };
 
 struct RenderData {
@@ -46,4 +49,6 @@ private:
   void getQueues();
   void createSwapchain();
   void createGraphicsPipeline();
+  void createCommandPool();
+  void createCommandBuffers();
 };
