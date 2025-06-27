@@ -6,53 +6,60 @@
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
 #include <VkBootstrap.h>
+#include <cstdint>
 #include <fmt/base.h>
 #include <fmt/printf.h>
 #include <leafEngine.h>
+#include <ranges>
+#include <type_traits>
+#include <vkutil.h>
 #include <vulkan/vulkan_core.h>
 
-constexpr bool useValidationLayers = true;
-
-constexpr int framesInFlight = 2;
-
 LeafEngine::LeafEngine() {
-
-  init.windowExtent = {.width = 480, .height = 480};
 
   createSDLWindow();
   initVulkan();
   getQueues();
-
-  int w, h;
-  SDL_GetWindowSize(init.window, &w, &h);
-  fmt::println("Window size: {} x {}", w, h);
+  createSwapchain();
+  initCommands();
+  initSynchronization();
 }
 LeafEngine::~LeafEngine() {
 
-  vkb::destroy_swapchain(init.swapchain);
-  vkb::destroy_device(init.device);
-  vkb::destroy_surface(init.instance, init.surface);
-  vkb::destroy_instance(init.instance);
-  SDL_DestroyWindow(init.window);
+  vkDeviceWaitIdle(context.device);
+
+  for (size_t i = 0; i < framesInFlight; i++) {
+    vkDestroyCommandPool(context.device, frames[i].commandPool, nullptr);
+
+    vkDestroyFence(context.device, frames[i].renderFence, nullptr);
+    vkDestroySemaphore(context.device, frames[i].renderSemaphore, nullptr);
+    vkDestroySemaphore(context.device, frames[i].swapchainSemaphore, nullptr);
+  }
+
+  vkb::destroy_swapchain(context.swapchain);
+
+  vkb::destroy_device(context.device);
+  vkb::destroy_surface(context.instance, context.surface);
+  vkb::destroy_instance(context.instance);
+  SDL_DestroyWindow(context.window);
   SDL_Quit();
 }
 
 void LeafEngine::createSDLWindow() {
 
-  init.window = SDL_CreateWindow("LeafEngine", init.windowExtent.width,
-                                 init.windowExtent.height,
-                                 SDL_WINDOW_VULKAN | SDL_WINDOW_BORDERLESS);
-  if (!init.window) {
+  context.window = SDL_CreateWindow("LeafEngine", 0, 0,
+                                    SDL_WINDOW_VULKAN | SDL_WINDOW_BORDERLESS);
+  if (!context.window) {
     fmt::println("failed to init SDL window: {}", SDL_GetError());
     std::exit(-1);
   }
 
-  if (!SDL_ShowWindow(init.window)) {
+  if (!SDL_ShowWindow(context.window)) {
     fmt::println("failed to show SDL window: {}", SDL_GetError());
     std::exit(-1);
   }
 
-  fmt::println("Window pointer: {}", (void *)init.window);
+  fmt::println("Window pointer: {}", (void*)context.window);
 }
 
 void LeafEngine::initVulkan() {
@@ -72,12 +79,12 @@ void LeafEngine::initVulkan() {
     std::exit(-1);
   }
 
-  init.instance = returnedInstance.value();
+  context.instance = returnedInstance.value();
 
-  init.instanceDispatchTable = init.instance.make_table();
+  context.instanceDispatchTable = context.instance.make_table();
 
-  bool result = SDL_Vulkan_CreateSurface(init.window, init.instance.instance,
-                                         nullptr, &init.surface);
+  bool result = SDL_Vulkan_CreateSurface(
+      context.window, context.instance.instance, nullptr, &context.surface);
   if (!result) {
     fmt::println("failed to create SDL surface: {}", SDL_GetError());
   }
@@ -94,11 +101,11 @@ void LeafEngine::initVulkan() {
   features12.bufferDeviceAddress = true;
   features12.descriptorIndexing  = true;
 
-  vkb::PhysicalDeviceSelector selector{init.instance};
+  vkb::PhysicalDeviceSelector selector{context.instance};
   auto returnedPhysicalDevice = selector.set_minimum_version(1, 3)
                                     .set_required_features_13(features13)
                                     .set_required_features_12(features12)
-                                    .set_surface(init.surface)
+                                    .set_surface(context.surface)
                                     .select();
 
   if (!returnedPhysicalDevice) {
@@ -107,9 +114,9 @@ void LeafEngine::initVulkan() {
     std::exit(-1);
   }
 
-  init.physicalDevice = returnedPhysicalDevice.value();
+  context.physicalDevice = returnedPhysicalDevice.value();
 
-  vkb::DeviceBuilder deviceBuilder{init.physicalDevice};
+  vkb::DeviceBuilder deviceBuilder{context.physicalDevice};
   auto               returnedDevice = deviceBuilder.build();
 
   if (!returnedDevice) {
@@ -117,18 +124,18 @@ void LeafEngine::initVulkan() {
                  returnedDevice.error().message());
     std::exit(-1);
   }
-  init.device        = returnedDevice.value();
-  init.dispatchTable = init.device.make_table();
+  context.device        = returnedDevice.value();
+  context.dispatchTable = context.device.make_table();
 }
 
 void LeafEngine::getQueues() {
-  auto graphicsQueue = init.device.get_queue(vkb::QueueType::graphics);
+  auto graphicsQueue = context.device.get_queue(vkb::QueueType::graphics);
   if (!graphicsQueue.has_value()) {
     fmt::println("failed to get graphics queue: {}",
                  graphicsQueue.error().message());
     std::exit(-1);
   }
-  auto presentQueue = init.device.get_queue(vkb::QueueType::present);
+  auto presentQueue = context.device.get_queue(vkb::QueueType::present);
   if (!presentQueue.has_value()) {
     fmt::println("failed to get present queue: {}",
                  presentQueue.error().message());
@@ -138,45 +145,166 @@ void LeafEngine::getQueues() {
 
 void LeafEngine::createSwapchain() {
 
-  vkb::SwapchainBuilder swapchain_builder{init.device};
+  int width, height;
+  SDL_GetWindowSizeInPixels(context.window, &width, &height);
+  context.windowExtent = {static_cast<uint32_t>(width),
+                          static_cast<uint32_t>(height)};
+
+  fmt::println("Window size:   [{} {}]", width, height);
+
+  vkb::SwapchainBuilder swapchain_builder{context.physicalDevice,
+                                          context.device, context.surface};
   auto                  returnedSwapchain =
-      swapchain_builder.set_old_swapchain(init.swapchain).build();
+      swapchain_builder.set_desired_format(context.surfaceFormat)
+          .set_desired_format(VkSurfaceFormatKHR{
+              .format     = context.swapchainImageFormat,
+              .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
+          .set_desired_present_mode(VK_PRESENT_MODE_MAILBOX_KHR)
+          .set_desired_extent(width, height)
+          .add_image_usage_flags(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
+          .build();
 
   if (!returnedSwapchain) {
     fmt::println("failed to build swapchain: {}",
                  returnedSwapchain.error().message());
     std::exit(-1);
   }
-  vkb::destroy_swapchain(init.swapchain);
-  init.swapchain = returnedSwapchain.value();
+  vkb::destroy_swapchain(context.swapchain);
+
+  context.swapchain              = returnedSwapchain.value();
+  renderData.swapchainImageViews = context.swapchain.get_image_views().value();
+  renderData.swapchainImages     = context.swapchain.get_images().value();
 }
 
-void LeafEngine::createCommandPool() {
-  VkCommandPoolCreateInfo poolInfo = {};
+void LeafEngine::initCommands() {
 
-  poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-  poolInfo.queueFamilyIndex =
-      init.device.get_queue_index(vkb::QueueType::graphics).value();
-  poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+  VkCommandPoolCreateInfo cmdPoolInfo = {};
+  cmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+  cmdPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+  cmdPoolInfo.queueFamilyIndex = renderData.graphicsQueueFamily;
 
-  if (init.dispatchTable.createCommandPool(
-          &poolInfo, nullptr, &renderData.commandPool) != VK_SUCCESS) {
-    fmt::println("Failed to create command pool");
-    std::exit(-1);
+  for (size_t i = 0; i < framesInFlight; i++) {
+
+    vkAssert(vkCreateCommandPool(context.device, &cmdPoolInfo, nullptr,
+                                 &frames[i].commandPool));
+
+    VkCommandBufferAllocateInfo cmdAllocInfo = {};
+    cmdAllocInfo.sType       = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    cmdAllocInfo.commandPool = frames[i].commandPool;
+    cmdAllocInfo.commandBufferCount = 1;
+    cmdAllocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+
+    vkAssert(vkAllocateCommandBuffers(context.device, &cmdAllocInfo,
+                                      &frames[i].mainCommandBuffer));
   }
 }
-void LeafEngine::createCommandBuffers() {
-  VkCommandBufferAllocateInfo allocInfo = {};
-  allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-  allocInfo.commandPool = renderData.commandPool;
-  allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-  allocInfo.commandBufferCount = framesInFlight;
 
-  renderData.commandBuffers.resize(framesInFlight);
-  VkResult result = vkAllocateCommandBuffers(init.device, &allocInfo, renderData.commandBuffers.data());
-  if (result != VK_SUCCESS) {
-    fmt::println("failed to allocate command buffers");
+void LeafEngine::initSynchronization() {
 
+  VkFenceCreateInfo fenceInfo = {};
+  fenceInfo.sType             = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+  fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // start as signaled
+
+  VkSemaphoreCreateInfo semaphoreInfo = {};
+  semaphoreInfo.sType                 = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+  semaphoreInfo.flags                 = 0;
+
+  for (size_t i = 0; i < framesInFlight; i++) {
+    vkAssert(vkCreateFence(context.device, &fenceInfo, nullptr,
+                           &frameData.renderFence));
+
+    vkAssert(vkCreateSemaphore(context.device, &semaphoreInfo, nullptr,
+                               &frames[i].renderSemaphore));
+    vkAssert(vkCreateSemaphore(context.device, &semaphoreInfo, nullptr,
+                               &frames[i].swapchainSemaphore));
   }
+}
 
+void LeafEngine::draw() {
+  // wait for GPU to finish work
+  vkAssert(vkWaitForFences(context.device, 1, &getCurrentFrame().renderFence,
+                           true, 1'000'000'000));
+  vkAssert(vkResetFences(context.device, 1, &getCurrentFrame().renderFence));
+
+  uint32_t                  swapchainImageIndex;
+  VkAcquireNextImageInfoKHR acquireInfo = {};
+  acquireInfo.sType     = VK_STRUCTURE_TYPE_ACQUIRE_NEXT_IMAGE_INFO_KHR;
+  acquireInfo.swapchain = context.swapchain;
+  acquireInfo.timeout   = 1'000'000'000; // 1 second
+  acquireInfo.semaphore = getCurrentFrame().swapchainSemaphore;
+  acquireInfo.fence     = nullptr;
+
+  vkAssert(vkAcquireNextImage2KHR(context.device, &acquireInfo,
+                                  &swapchainImageIndex));
+
+  // render commands
+  VkCommandBuffer cmd = getCurrentFrame().mainCommandBuffer;
+  vkAssert(vkResetCommandBuffer(cmd, 0));
+
+  VkCommandBufferBeginInfo cmdBeginInfo = {};
+  cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+  vkAssert(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
+
+  // transition image to writable
+  vkutil::transitionImage(cmd, renderData.swapchainImages[swapchainImageIndex],
+                          VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+
+  VkClearColorValue clearValue = {};
+  clearValue                   = {{0.1f, 0.1f, 0.1f, 1.0f}};
+
+  VkImageSubresourceRange clearRange =
+      vkinit::imageSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
+
+  vkCmdClearColorImage(cmd, renderData.swapchainImages[swapchainImageIndex],
+                       VK_IMAGE_LAYOUT_GENERAL, &clearValue, 1, &clearRange);
+
+  // transition image to drawable
+  vkutil::transitionImage(cmd, renderData.swapchainImages[swapchainImageIndex],
+                          VK_IMAGE_LAYOUT_GENERAL,
+                          VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+
+  vkAssert(vkEndCommandBuffer(cmd));
+
+  // command is ready for submission
+  VkCommandBufferSubmitInfo submitInfo = {};
+  submitInfo.sType         = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+  submitInfo.commandBuffer = cmd;
+
+  VkSemaphoreSubmitInfo waitInfo = {};
+  waitInfo.sType                 = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+  waitInfo.semaphore             = getCurrentFrame().swapchainSemaphore;
+  waitInfo.value                 = 1;
+  waitInfo.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR;
+
+  VkSemaphoreSubmitInfo signalInfo = {};
+  signalInfo.sType                 = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+  signalInfo.semaphore             = getCurrentFrame().renderSemaphore;
+  signalInfo.value                 = 1;
+  signalInfo.stageMask             = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
+
+  VkSubmitInfo2 submit            = {};
+  submit.sType                    = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+  submit.waitSemaphoreInfoCount   = 1;
+  submit.pWaitSemaphoreInfos      = &waitInfo;
+  submit.commandBufferInfoCount   = 1;
+  submit.pCommandBufferInfos      = &submitInfo;
+  submit.signalSemaphoreInfoCount = 1;
+  submit.pSignalSemaphoreInfos    = &signalInfo;
+
+  vkAssert(vkQueueSubmit2(renderData.graphicsQueue, 1, &submit,
+                          getCurrentFrame().renderFence));
+
+  // prapare present
+  VkPresentInfoKHR presentInfo   = {};
+  presentInfo.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+  presentInfo.pSwapchains        = &context.swapchain.swapchain;
+  presentInfo.swapchainCount     = 1;
+  presentInfo.pWaitSemaphores    = &getCurrentFrame().renderSemaphore;
+  presentInfo.waitSemaphoreCount = 1;
+  presentInfo.pImageIndices      = &swapchainImageIndex;
+  vkAssert(vkQueuePresentKHR(renderData.graphicsQueue, &presentInfo));
+
+  renderData.frameNumber++;
 }
