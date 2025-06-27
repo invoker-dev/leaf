@@ -10,10 +10,9 @@
 #include <fmt/base.h>
 #include <fmt/printf.h>
 #include <leafEngine.h>
-#include <ranges>
-#include <type_traits>
 #include <vkutil.h>
 #include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan_wayland.h>
 
 LeafEngine::LeafEngine() {
 
@@ -23,6 +22,8 @@ LeafEngine::LeafEngine() {
   createSwapchain();
   initCommands();
   initSynchronization();
+
+  fmt::println("SDL video driver: {}", SDL_GetCurrentVideoDriver());
 }
 LeafEngine::~LeafEngine() {
 
@@ -47,8 +48,10 @@ LeafEngine::~LeafEngine() {
 
 void LeafEngine::createSDLWindow() {
 
-  context.window = SDL_CreateWindow("LeafEngine", 0, 0,
-                                    SDL_WINDOW_VULKAN | SDL_WINDOW_BORDERLESS);
+  SDL_WindowFlags sdlFlags =
+      (SDL_WindowFlags)(SDL_WINDOW_VULKAN);
+
+  context.window = SDL_CreateWindow("LeafEngine", 800, 800, sdlFlags);
   if (!context.window) {
     fmt::println("failed to init SDL window: {}", SDL_GetError());
     std::exit(-1);
@@ -64,14 +67,25 @@ void LeafEngine::createSDLWindow() {
 
 void LeafEngine::initVulkan() {
 
+  unsigned int count = 0;
+  SDL_Vulkan_GetInstanceExtensions(&count);
+  const char* const*       arr = SDL_Vulkan_GetInstanceExtensions(&count);
+  std::vector<const char*> sdlExtensions(arr, arr + count);
+
   vkb::InstanceBuilder builder;
 
-  vkb::Result<vkb::Instance> returnedInstance =
-      builder.set_app_name("leaf")
-          .require_api_version(1, 3, 0)
-          .use_default_debug_messenger()
-          .request_validation_layers(useValidationLayers)
-          .build();
+  fmt::println("extensions");
+  for (auto ext : sdlExtensions) {
+    fmt::println("{}", ext);
+  }
+
+  builder.set_app_name("leaf")
+      .require_api_version(1, 3, 0)
+      .use_default_debug_messenger()
+      .request_validation_layers(useValidationLayers)
+      .enable_extensions(sdlExtensions);
+
+  auto returnedInstance = builder.build();
 
   if (!returnedInstance) {
     fmt::println("Failed to build vkbInstance: {}",
@@ -135,12 +149,15 @@ void LeafEngine::getQueues() {
                  graphicsQueue.error().message());
     std::exit(-1);
   }
-  auto presentQueue = context.device.get_queue(vkb::QueueType::present);
-  if (!presentQueue.has_value()) {
-    fmt::println("failed to get present queue: {}",
-                 presentQueue.error().message());
-    std::exit(-1);
-  }
+  renderData.graphicsQueue = graphicsQueue.value();
+  renderData.graphicsQueueFamily =
+      context.device.get_queue_index(vkb::QueueType::graphics).value();
+  // auto presentQueue = context.device.get_queue(vkb::QueueType::present);
+  // if (!presentQueue.has_value()) {
+  //   fmt::println("failed to get present queue: {}",
+  //                presentQueue.error().message());
+  //   std::exit(-1);
+  // }
 }
 
 void LeafEngine::createSwapchain() {
@@ -159,7 +176,7 @@ void LeafEngine::createSwapchain() {
           .set_desired_format(VkSurfaceFormatKHR{
               .format     = context.swapchainImageFormat,
               .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
-          .set_desired_present_mode(VK_PRESENT_MODE_MAILBOX_KHR)
+          .set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR)
           .set_desired_extent(width, height)
           .add_image_usage_flags(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
           .build();
@@ -211,7 +228,7 @@ void LeafEngine::initSynchronization() {
 
   for (size_t i = 0; i < framesInFlight; i++) {
     vkAssert(vkCreateFence(context.device, &fenceInfo, nullptr,
-                           &frameData.renderFence));
+                           &frames[i].renderFence));
 
     vkAssert(vkCreateSemaphore(context.device, &semaphoreInfo, nullptr,
                                &frames[i].renderSemaphore));
@@ -222,17 +239,20 @@ void LeafEngine::initSynchronization() {
 
 void LeafEngine::draw() {
   // wait for GPU to finish work
+  
+  fmt::println("start of draw");
   vkAssert(vkWaitForFences(context.device, 1, &getCurrentFrame().renderFence,
                            true, 1'000'000'000));
   vkAssert(vkResetFences(context.device, 1, &getCurrentFrame().renderFence));
 
   uint32_t                  swapchainImageIndex;
   VkAcquireNextImageInfoKHR acquireInfo = {};
-  acquireInfo.sType     = VK_STRUCTURE_TYPE_ACQUIRE_NEXT_IMAGE_INFO_KHR;
-  acquireInfo.swapchain = context.swapchain;
-  acquireInfo.timeout   = 1'000'000'000; // 1 second
-  acquireInfo.semaphore = getCurrentFrame().swapchainSemaphore;
-  acquireInfo.fence     = nullptr;
+  acquireInfo.sType      = VK_STRUCTURE_TYPE_ACQUIRE_NEXT_IMAGE_INFO_KHR;
+  acquireInfo.swapchain  = context.swapchain;
+  acquireInfo.timeout    = 1'000'000'000; // 1 second
+  acquireInfo.semaphore  = getCurrentFrame().swapchainSemaphore;
+  acquireInfo.fence      = nullptr;
+  acquireInfo.deviceMask = 0x1;
 
   vkAssert(vkAcquireNextImage2KHR(context.device, &acquireInfo,
                                   &swapchainImageIndex));
@@ -307,4 +327,6 @@ void LeafEngine::draw() {
   vkAssert(vkQueuePresentKHR(renderData.graphicsQueue, &presentInfo));
 
   renderData.frameNumber++;
+
+  fmt::println("end of draw");
 }

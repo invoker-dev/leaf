@@ -76,9 +76,8 @@ public:
 private:
   VulkanContext context;
   RenderData    renderData;
-  FrameData     frameData;
   FrameData     frames[framesInFlight];
-  FrameData&    getCurrentFrame() { return frames[renderData.frameNumber]; }
+  FrameData&    getCurrentFrame() { return frames[renderData.frameNumber % framesInFlight]; }
 
   void createSDLWindow();
   void initVulkan();
