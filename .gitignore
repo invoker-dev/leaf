@@ -8,7 +8,6 @@
 /Makefile
 /cmake_install.cmake
 compile_commands.json
-
 .cache
 
 # Linux
@@ -24,3 +23,6 @@ compile_commands.json
 *.log
 *.tmp
 *.bak
+
+# ignore local scripts
+*.sh
