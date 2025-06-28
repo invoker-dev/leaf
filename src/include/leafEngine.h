@@ -9,7 +9,11 @@
 #include <vulkan/vulkan_core.h>
 
 inline void vkAssert(VkResult result) {
-  if (result != VK_SUCCESS) {
+  if (result == VK_SUBOPTIMAL_KHR) {
+    // do nothing, for now. Should recreate swapchain
+    // only a problem on X11
+  }
+  else if (result != VK_SUCCESS) {
     fmt::print("Detected Vulkan error: {}\n", string_VkResult(result));
     std::abort();
   }

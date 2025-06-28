@@ -34,7 +34,7 @@ VkImageCreateInfo imageCreateInfo(VkFormat format, VkImageUsageFlags usageFlags,
 VkImageViewCreateInfo imageViewCreateInfo(VkFormat format, VkImage image,
                                           VkImageAspectFlags aspectFlags) {
   VkImageViewCreateInfo info = {};
-  info.sType                 = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+  info.sType                 = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
   info.viewType              = VK_IMAGE_VIEW_TYPE_2D;
   info.image                 = image;
   info.format                = format;

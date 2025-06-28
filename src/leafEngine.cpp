@@ -1,4 +1,3 @@
-#include <SDL3/SDL.h>
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_init.h>
@@ -16,7 +15,6 @@
 #include <leafUtil.h>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_wayland.h>
-#include <vulkanDestroyer.h>
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
 
@@ -29,7 +27,6 @@ LeafEngine::LeafEngine() {
   initCommands();
   initSynchronization();
 
-  fmt::println("SDL video driver: {}", SDL_GetCurrentVideoDriver());
 }
 LeafEngine::~LeafEngine() {
 
@@ -61,8 +58,6 @@ void LeafEngine::createSDLWindow() {
     fmt::println("failed to show SDL window: {}", SDL_GetError());
     std::exit(-1);
   }
-
-  fmt::println("Window pointer: {}", (void*)context.window);
 }
 
 void LeafEngine::initVulkan() {
@@ -235,8 +230,7 @@ void LeafEngine::initSwapchain() {
   vkAssert(vkCreateImageView(context.device, &renderImageViewCreateInfo,
                              nullptr, &renderData.drawImage.imageView));
 
-  context.vulkanDestroyer.addImage(renderData.drawImage.image,
-                                   renderData.drawImage.imageView);
+  context.vulkanDestroyer.addImage(renderData.drawImage);
 }
 
 void LeafEngine::initCommands() {
@@ -318,15 +312,15 @@ void LeafEngine::draw() {
 
   // transition image to writable
   leafUtil::transitionImage(cmd,
-                            renderData.swapchainImages[swapchainImageIndex],
+                            renderData.drawImage.image,
                             VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
   drawBackground(cmd);
 
   // transition image to drawable
   leafUtil::transitionImage(
-      cmd, renderData.swapchainImages[swapchainImageIndex],
-      VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+      cmd, renderData.drawImage.image,
+      VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL );
 
   leafUtil::transitionImage(
       cmd, renderData.swapchainImages[swapchainImageIndex],
