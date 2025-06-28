@@ -6,20 +6,26 @@
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
 #include <VkBootstrap.h>
+#include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <fmt/base.h>
 #include <fmt/printf.h>
 #include <leafEngine.h>
-#include <vkutil.h>
+#include <leafInit.h>
+#include <leafUtil.h>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_wayland.h>
+#include <vulkanDestroyer.h>
+#define VMA_IMPLEMENTATION
+#include <vk_mem_alloc.h>
 
 LeafEngine::LeafEngine() {
 
   createSDLWindow();
   initVulkan();
   getQueues();
-  createSwapchain();
+  initSwapchain();
   initCommands();
   initSynchronization();
 
@@ -29,16 +35,11 @@ LeafEngine::~LeafEngine() {
 
   vkDeviceWaitIdle(context.device);
 
-  for (size_t i = 0; i < framesInFlight; i++) {
-    vkDestroyCommandPool(context.device, frames[i].commandPool, nullptr);
+  // destroys primitives (images, buffers, fences etc)
+  context.vulkanDestroyer.flush(context.device, context.allocator);
 
-    vkDestroyFence(context.device, frames[i].renderFence, nullptr);
-    vkDestroySemaphore(context.device, frames[i].renderSemaphore, nullptr);
-    vkDestroySemaphore(context.device, frames[i].swapchainSemaphore, nullptr);
-  }
-
+  vmaDestroyAllocator(context.allocator);
   vkb::destroy_swapchain(context.swapchain);
-
   vkb::destroy_device(context.device);
   vkb::destroy_surface(context.instance, context.surface);
   vkb::destroy_instance(context.instance);
@@ -48,8 +49,7 @@ LeafEngine::~LeafEngine() {
 
 void LeafEngine::createSDLWindow() {
 
-  SDL_WindowFlags sdlFlags =
-      (SDL_WindowFlags)(SDL_WINDOW_VULKAN);
+  SDL_WindowFlags sdlFlags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN);
 
   context.window = SDL_CreateWindow("LeafEngine", 800, 800, sdlFlags);
   if (!context.window) {
@@ -140,6 +140,13 @@ void LeafEngine::initVulkan() {
   }
   context.device        = returnedDevice.value();
   context.dispatchTable = context.device.make_table();
+
+  VmaAllocatorCreateInfo allocatorInfo = {};
+  allocatorInfo.physicalDevice         = context.physicalDevice;
+  allocatorInfo.device                 = context.device;
+  allocatorInfo.instance               = context.instance;
+  allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+  vmaCreateAllocator(&allocatorInfo, &context.allocator);
 }
 
 void LeafEngine::getQueues() {
@@ -160,7 +167,7 @@ void LeafEngine::getQueues() {
   // }
 }
 
-void LeafEngine::createSwapchain() {
+void LeafEngine::initSwapchain() {
 
   int width, height;
   SDL_GetWindowSizeInPixels(context.window, &width, &height);
@@ -191,6 +198,45 @@ void LeafEngine::createSwapchain() {
   context.swapchain              = returnedSwapchain.value();
   renderData.swapchainImageViews = context.swapchain.get_image_views().value();
   renderData.swapchainImages     = context.swapchain.get_images().value();
+  renderData.swapchainExtent     = context.swapchain.extent;
+
+  VkExtent3D drawImageExtent = {};
+  drawImageExtent.width      = context.windowExtent.width;
+  drawImageExtent.height     = context.windowExtent.height;
+  drawImageExtent.depth      = 1;
+
+  renderData.drawImage             = {};
+  renderData.drawImage.imageFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+  renderData.drawImage.imageExtent = drawImageExtent;
+
+  VkImageUsageFlags drawImageUsages = {};
+  drawImageUsages |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+  drawImageUsages |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+  drawImageUsages |= VK_IMAGE_USAGE_STORAGE_BIT;
+  drawImageUsages |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+
+  VkImageCreateInfo renderImageCreateInfo = leafInit::imageCreateInfo(
+      renderData.drawImage.imageFormat, drawImageUsages, drawImageExtent);
+
+  VmaAllocationCreateInfo renderImageAllocationInfo = {};
+  renderImageAllocationInfo.usage                   = VMA_MEMORY_USAGE_GPU_ONLY;
+  renderImageAllocationInfo.requiredFlags =
+      VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+  vmaCreateImage(context.allocator, &renderImageCreateInfo,
+                 &renderImageAllocationInfo, &renderData.drawImage.image,
+                 &renderData.drawImage.allocation, nullptr);
+
+  VkImageViewCreateInfo renderImageViewCreateInfo =
+      leafInit::imageViewCreateInfo(renderData.drawImage.imageFormat,
+                                    renderData.drawImage.image,
+                                    VK_IMAGE_ASPECT_COLOR_BIT);
+
+  vkAssert(vkCreateImageView(context.device, &renderImageViewCreateInfo,
+                             nullptr, &renderData.drawImage.imageView));
+
+  context.vulkanDestroyer.addImage(renderData.drawImage.image,
+                                   renderData.drawImage.imageView);
 }
 
 void LeafEngine::initCommands() {
@@ -234,13 +280,16 @@ void LeafEngine::initSynchronization() {
                                &frames[i].renderSemaphore));
     vkAssert(vkCreateSemaphore(context.device, &semaphoreInfo, nullptr,
                                &frames[i].swapchainSemaphore));
+
+    context.vulkanDestroyer.addFence(frames[i].renderFence);
+    context.vulkanDestroyer.addSemaphore(frames[i].renderSemaphore);
+    context.vulkanDestroyer.addSemaphore(frames[i].swapchainSemaphore);
   }
 }
 
 void LeafEngine::draw() {
   // wait for GPU to finish work
-  
-  fmt::println("start of draw");
+
   vkAssert(vkWaitForFences(context.device, 1, &getCurrentFrame().renderFence,
                            true, 1'000'000'000));
   vkAssert(vkResetFences(context.device, 1, &getCurrentFrame().renderFence));
@@ -268,22 +317,28 @@ void LeafEngine::draw() {
   vkAssert(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
 
   // transition image to writable
-  vkutil::transitionImage(cmd, renderData.swapchainImages[swapchainImageIndex],
-                          VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+  leafUtil::transitionImage(cmd,
+                            renderData.swapchainImages[swapchainImageIndex],
+                            VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
-  VkClearColorValue clearValue = {};
-  clearValue                   = {{0.1f, 0.1f, 0.1f, 1.0f}};
-
-  VkImageSubresourceRange clearRange =
-      vkinit::imageSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
-
-  vkCmdClearColorImage(cmd, renderData.swapchainImages[swapchainImageIndex],
-                       VK_IMAGE_LAYOUT_GENERAL, &clearValue, 1, &clearRange);
+  drawBackground(cmd);
 
   // transition image to drawable
-  vkutil::transitionImage(cmd, renderData.swapchainImages[swapchainImageIndex],
-                          VK_IMAGE_LAYOUT_GENERAL,
-                          VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+  leafUtil::transitionImage(
+      cmd, renderData.swapchainImages[swapchainImageIndex],
+      VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+
+  leafUtil::transitionImage(
+      cmd, renderData.swapchainImages[swapchainImageIndex],
+      VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+  leafUtil::copyImageToImage(cmd, renderData.drawImage.image,
+                             renderData.swapchainImages[swapchainImageIndex],
+                             renderData.drawExtent, renderData.swapchainExtent);
+
+  leafUtil::transitionImage(
+      cmd, renderData.swapchainImages[swapchainImageIndex],
+      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
   vkAssert(vkEndCommandBuffer(cmd));
 
@@ -316,7 +371,7 @@ void LeafEngine::draw() {
   vkAssert(vkQueueSubmit2(renderData.graphicsQueue, 1, &submit,
                           getCurrentFrame().renderFence));
 
-  // prapare present
+  // prepare present
   VkPresentInfoKHR presentInfo   = {};
   presentInfo.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
   presentInfo.pSwapchains        = &context.swapchain.swapchain;
@@ -327,6 +382,18 @@ void LeafEngine::draw() {
   vkAssert(vkQueuePresentKHR(renderData.graphicsQueue, &presentInfo));
 
   renderData.frameNumber++;
+}
 
-  fmt::println("end of draw");
+void LeafEngine::drawBackground(VkCommandBuffer cmd) {
+
+  VkClearColorValue clearValue;
+
+  float flash = std::abs(std::sin(renderData.frameNumber / 120.f));
+  clearValue  = {{0.2, 0.1, flash, 1.0f}};
+
+  VkImageSubresourceRange clearRange =
+      leafInit::imageSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
+
+  vkCmdClearColorImage(cmd, renderData.drawImage.image, VK_IMAGE_LAYOUT_GENERAL,
+                       &clearValue, 1, &clearRange);
 }
