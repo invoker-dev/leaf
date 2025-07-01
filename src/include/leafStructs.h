@@ -18,6 +18,7 @@ class VulkanDestroyer { // DOOM!
 public:
   void addImage(AllocatedImage image);
   void addBuffer(VkBuffer buffer);
+  void addCommandPool(VkCommandPool pool);
   void addSemaphore(VkSemaphore semaphore);
   void addFence(VkFence fence);
 
@@ -26,6 +27,7 @@ public:
 private:
   std::vector<AllocatedImage> images;
   std::vector<VkBuffer>       buffers;
+  std::vector<VkCommandPool>  commandPools;
   std::vector<VkSemaphore>    semaphores;
   std::vector<VkFence>        fences;
 };

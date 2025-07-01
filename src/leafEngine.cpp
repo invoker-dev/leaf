@@ -16,6 +16,7 @@
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_wayland.h>
 #define VMA_IMPLEMENTATION
+#include <slang.h>
 #include <vk_mem_alloc.h>
 
 LeafEngine::LeafEngine() {
@@ -26,7 +27,6 @@ LeafEngine::LeafEngine() {
   initSwapchain();
   initCommands();
   initSynchronization();
-
 }
 LeafEngine::~LeafEngine() {
 
@@ -229,8 +229,6 @@ void LeafEngine::initSwapchain() {
 
   vkAssert(vkCreateImageView(context.device, &renderImageViewCreateInfo,
                              nullptr, &renderData.drawImage.imageView));
-
-  context.vulkanDestroyer.addImage(renderData.drawImage);
 }
 
 void LeafEngine::initCommands() {
@@ -244,6 +242,8 @@ void LeafEngine::initCommands() {
 
     vkAssert(vkCreateCommandPool(context.device, &cmdPoolInfo, nullptr,
                                  &frames[i].commandPool));
+
+    context.vulkanDestroyer.addCommandPool(frames[i].commandPool);
 
     VkCommandBufferAllocateInfo cmdAllocInfo = {};
     cmdAllocInfo.sType       = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -311,16 +311,15 @@ void LeafEngine::draw() {
   vkAssert(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
 
   // transition image to writable
-  leafUtil::transitionImage(cmd,
-                            renderData.drawImage.image,
+  leafUtil::transitionImage(cmd, renderData.drawImage.image,
                             VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
   drawBackground(cmd);
 
   // transition image to drawable
-  leafUtil::transitionImage(
-      cmd, renderData.drawImage.image,
-      VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL );
+  leafUtil::transitionImage(cmd, renderData.drawImage.image,
+                            VK_IMAGE_LAYOUT_GENERAL,
+                            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 
   leafUtil::transitionImage(
       cmd, renderData.swapchainImages[swapchainImageIndex],

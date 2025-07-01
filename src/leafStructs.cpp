@@ -1,15 +1,24 @@
 #include <leafStructs.h>
+#include <vulkan/vulkan_core.h>
 
-  void VulkanDestroyer::addImage(AllocatedImage image) {
+void VulkanDestroyer::addImage(AllocatedImage image) {
   images.push_back(image);
 };
+
 void VulkanDestroyer::addBuffer(VkBuffer buffer) { buffers.push_back(buffer); };
 void VulkanDestroyer::addSemaphore(VkSemaphore semaphore) {
   semaphores.push_back(semaphore);
 }
 void VulkanDestroyer::addFence(VkFence fence) { fences.push_back(fence); }
 
+void VulkanDestroyer::addCommandPool(VkCommandPool pool) {
+  commandPools.push_back(pool);
+}
 void VulkanDestroyer::flush(VkDevice device, VmaAllocator allocator) {
+
+  for (auto p : commandPools){
+    vkDestroyCommandPool(device, p, nullptr);
+  }
 
   for (auto i : images) {
     vkDestroyImageView(device, i.imageView, nullptr);
