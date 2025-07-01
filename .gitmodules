@@ -16,3 +16,6 @@
 [submodule "lib/stb"]
 	path = lib/stb
 	url = https://github.com/nothings/stb
+[submodule "lib/slang"]
+	path = lib/slang
+	url = https://github.com/shader-slang/slang.git
