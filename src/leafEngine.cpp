@@ -1,3 +1,4 @@
+#include "leafStructs.h"
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_init.h>
@@ -17,6 +18,7 @@
 #include <vulkan/vulkan_wayland.h>
 #define VMA_IMPLEMENTATION
 #include <slang.h>
+#include <vector>
 #include <vk_mem_alloc.h>
 
 LeafEngine::LeafEngine() {
@@ -27,6 +29,8 @@ LeafEngine::LeafEngine() {
   initSwapchain();
   initCommands();
   initSynchronization();
+  initDescriptors();
+  initPipelines();
 }
 LeafEngine::~LeafEngine() {
 
@@ -48,7 +52,7 @@ void LeafEngine::createSDLWindow() {
 
   SDL_WindowFlags sdlFlags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN);
 
-  context.window = SDL_CreateWindow("LeafEngine", 800, 800, sdlFlags);
+  context.window = SDL_CreateWindow("LeafEngine", 0,0, sdlFlags);
   if (!context.window) {
     fmt::println("failed to init SDL window: {}", SDL_GetError());
     std::exit(-1);
@@ -379,14 +383,90 @@ void LeafEngine::draw() {
 
 void LeafEngine::drawBackground(VkCommandBuffer cmd) {
 
-  VkClearColorValue clearValue;
+  // VkClearColorValue clearValue;
+  //
+  // float flash = std::abs(std::sin(renderData.frameNumber / 120.f));
+  // clearValue  = {{0.2, 0.1, flash, 1.0f}};
+  //
+  // VkImageSubresourceRange clearRange =
+  //     leafInit::imageSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
+  //
+  // vkCmdClearColorImage(cmd, renderData.drawImage.image,
+  // VK_IMAGE_LAYOUT_GENERAL,
+  //                      &clearValue, 1, &clearRange);
 
-  float flash = std::abs(std::sin(renderData.frameNumber / 120.f));
-  clearValue  = {{0.2, 0.1, flash, 1.0f}};
+  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, renderData.pipeline);
 
-  VkImageSubresourceRange clearRange =
-      leafInit::imageSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
+  vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+                          renderData.pipelineLayout, 0, 1,
+                          &renderData.drawImageDescriptors, 0, nullptr);
 
-  vkCmdClearColorImage(cmd, renderData.drawImage.image, VK_IMAGE_LAYOUT_GENERAL,
-                       &clearValue, 1, &clearRange);
+  vkCmdDispatch(cmd, std::ceil(renderData.drawExtent.width / 16.0),
+                std::ceil(renderData.drawExtent.height / 16.0), 1);
+}
+
+void LeafEngine::initDescriptors() {
+  std::vector<PoolSizeRatio> sizes = {{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1}};
+  context.descriptorAllocator.emplace(context.device, 10, sizes);
+
+  DescriptorLayoutBuilder builder = {};
+  builder.addBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+  renderData.drawImageDescriptorLayout =
+      builder.build(context.device, VK_SHADER_STAGE_COMPUTE_BIT, nullptr, 0);
+
+  renderData.drawImageDescriptors = context.descriptorAllocator->allocate(
+      renderData.drawImageDescriptorLayout);
+
+  VkDescriptorImageInfo imageInfo = {};
+  imageInfo.imageLayout           = VK_IMAGE_LAYOUT_GENERAL;
+  imageInfo.imageView             = renderData.drawImage.imageView;
+
+  VkWriteDescriptorSet drawImageWrite = {};
+  drawImageWrite.sType                = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+  drawImageWrite.dstBinding           = 0;
+  drawImageWrite.dstSet               = renderData.drawImageDescriptors;
+  drawImageWrite.descriptorType       = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+  drawImageWrite.pImageInfo           = &imageInfo;
+  drawImageWrite.descriptorCount      = 1;
+
+  vkUpdateDescriptorSets(context.device, 1, &drawImageWrite, 0, nullptr);
+
+  context.vulkanDestroyer.addDescriptorSetLayout(
+      renderData.drawImageDescriptorLayout);
+}
+
+void LeafEngine::initPipelines() {
+
+  VkPipelineLayoutCreateInfo computeLayout = {};
+  computeLayout.sType          = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+  computeLayout.pSetLayouts    = &renderData.drawImageDescriptorLayout;
+  computeLayout.setLayoutCount = 1;
+  vkAssert(vkCreatePipelineLayout(context.device, &computeLayout, nullptr,
+                                  &renderData.pipelineLayout));
+
+  VkShaderModule computeShader =
+      leafUtil::loadShaderModule("gradient.spv", context.device);
+  if (!computeShader) {
+    fmt::println("could not load compute shader");
+  }
+
+  VkPipelineShaderStageCreateInfo stageInfo = {};
+  stageInfo.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+  stageInfo.stage  = VK_SHADER_STAGE_COMPUTE_BIT;
+  stageInfo.module = computeShader;
+  stageInfo.pName  = "main";
+
+  VkComputePipelineCreateInfo computePipelineCreateInfo{};
+  computePipelineCreateInfo.sType =
+      VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+  computePipelineCreateInfo.layout = renderData.pipelineLayout;
+  computePipelineCreateInfo.stage  = stageInfo;
+
+  vkAssert(vkCreateComputePipelines(context.device, VK_NULL_HANDLE, 1,
+                                    &computePipelineCreateInfo, nullptr,
+                                    &renderData.pipeline));
+
+  vkDestroyShaderModule(context.device, computeShader, nullptr);
+
+  // add pipeline and pipeline layout to destroyer
 }

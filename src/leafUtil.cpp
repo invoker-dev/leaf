@@ -1,4 +1,8 @@
+#include "leafEngine.h"
 #include <VkBootstrap.h>
+#include <filesystem>
+#include <fmt/base.h>
+#include <fstream>
 #include <leafInit.h>
 #include <leafUtil.h>
 #include <vulkan/vulkan_core.h>
@@ -71,4 +75,36 @@ void copyImageToImage(VkCommandBuffer commandBuffer, VkImage src, VkImage dst,
   vkCmdBlitImage2(commandBuffer, &blitInfo);
 }
 
+VkShaderModule loadShaderModule(const std::string fileName, VkDevice device) {
+
+  std::string   path = "build/shaders/" + fileName;
+  std::ifstream file(path, std::ios::ate | std::ios::binary);
+
+  fmt::println("Attempting to load shader from: {}",
+               std::filesystem::absolute(path).string());
+
+  if (!file.is_open()) {
+    fmt::println("could not open file");
+    return nullptr;
+  }
+
+  size_t fileSize = static_cast<size_t>(file.tellg());
+
+  std::vector<uint32_t> buffer(fileSize / sizeof(uint32_t));
+
+  file.seekg(0);
+
+  file.read((char*)buffer.data(), fileSize);
+
+  file.close();
+
+  VkShaderModuleCreateInfo info = {};
+  info.sType                    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+  info.codeSize                 = buffer.size() * sizeof(uint32_t);
+  info.pCode                    = buffer.data();
+
+  VkShaderModule shaderModule;
+  vkAssert(vkCreateShaderModule(device, &info, nullptr, &shaderModule));
+  return shaderModule;
+}
 } // namespace leafUtil

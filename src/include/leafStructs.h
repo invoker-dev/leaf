@@ -1,10 +1,12 @@
 #pragma once
 #include <SDL3/SDL.h>
 #include <VkBootstrap.h>
+#include <span>
 #include <vector>
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
+#include<optional>
 
 struct AllocatedImage {
   VkImage       image;
@@ -21,15 +23,59 @@ public:
   void addCommandPool(VkCommandPool pool);
   void addSemaphore(VkSemaphore semaphore);
   void addFence(VkFence fence);
+  void addDescriptorPool(VkDescriptorPool pool);
+  void addDescriptorSetLayout(VkDescriptorSetLayout layout);
 
   void flush(VkDevice device, VmaAllocator allocator);
 
 private:
-  std::vector<AllocatedImage> images;
-  std::vector<VkBuffer>       buffers;
-  std::vector<VkCommandPool>  commandPools;
-  std::vector<VkSemaphore>    semaphores;
-  std::vector<VkFence>        fences;
+  std::vector<AllocatedImage>        images;
+  std::vector<VkBuffer>              buffers;
+  std::vector<VkCommandPool>         commandPools;
+  std::vector<VkSemaphore>           semaphores;
+  std::vector<VkFence>               fences;
+  std::vector<VkDescriptorPool>      descriptorPools;
+  std::vector<VkDescriptorSetLayout> descriptorSetLayouts;
+};
+
+struct FrameData {
+
+  VkCommandPool   commandPool;
+  VkCommandBuffer mainCommandBuffer;
+  VkSemaphore     swapchainSemaphore, renderSemaphore;
+  VkFence         renderFence;
+};
+class DescriptorLayoutBuilder {
+public:
+  DescriptorLayoutBuilder() {};
+  ~DescriptorLayoutBuilder() { clear(); }
+  void                  addBinding(uint32_t binding, VkDescriptorType type);
+  void                  clear();
+  VkDescriptorSetLayout build(VkDevice device, VkShaderStageFlags shaderStages,
+                              void*                            pNext,
+                              VkDescriptorSetLayoutCreateFlags flags);
+
+private:
+  std::vector<VkDescriptorSetLayoutBinding> bindings;
+};
+
+struct PoolSizeRatio {
+  VkDescriptorType type;
+  float            ratio;
+};
+
+class DescriptorAllocator {
+public:
+  DescriptorAllocator(VkDevice device, uint32_t maxSets,
+                      std::span<PoolSizeRatio> poolRatios);
+  ~DescriptorAllocator();
+
+  void            clear();
+  VkDescriptorSet allocate(VkDescriptorSetLayout layout);
+
+private:
+  VkDescriptorPool pool;
+  VkDevice         device;
 };
 
 struct VulkanContext {
@@ -46,16 +92,11 @@ struct VulkanContext {
   SDL_Window*                window;
   VmaAllocator               allocator;
 
+  std::optional<DescriptorAllocator> descriptorAllocator;
+
   VulkanDestroyer vulkanDestroyer;
 };
 
-struct FrameData {
-
-  VkCommandPool   commandPool;
-  VkCommandBuffer mainCommandBuffer;
-  VkSemaphore     swapchainSemaphore, renderSemaphore;
-  VkFence         renderFence;
-};
 struct RenderData {
 
   VkQueue  graphicsQueue;
@@ -74,5 +115,7 @@ struct RenderData {
 
   AllocatedImage drawImage;
   VkExtent2D     drawExtent;
+
+  VkDescriptorSet       drawImageDescriptors;
+  VkDescriptorSetLayout drawImageDescriptorLayout;
 };
-;

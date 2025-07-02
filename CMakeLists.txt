@@ -44,6 +44,7 @@ add_subdirectory(lib/vma)
 target_compile_options(volk         PRIVATE -w)
 target_compile_options(vk-bootstrap PRIVATE -w)
 target_compile_options(fastgltf     PRIVATE -w)
+target_compile_options(VulkanMemoryAllocator INTERFACE -w)
 
 # ------------------------------------------------------
 # Dependencies -- static libraries
