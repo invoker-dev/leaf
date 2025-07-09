@@ -80,9 +80,6 @@ VkShaderModule loadShaderModule(const std::string fileName, VkDevice device) {
   std::string   path = "build/shaders/" + fileName;
   std::ifstream file(path, std::ios::ate | std::ios::binary);
 
-  fmt::println("Attempting to load shader from: {}",
-               std::filesystem::absolute(path).string());
-
   if (!file.is_open()) {
     fmt::println("could not open file");
     return nullptr;

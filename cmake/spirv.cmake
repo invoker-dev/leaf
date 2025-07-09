@@ -39,6 +39,16 @@ file(GLOB_RECURSE SHADER_FILES
     "${SHADER_SOURCE_DIR}/*.tese"
 )
 
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${SHADER_SOURCE_DIR}/*.slang"
+    "${SHADER_SOURCE_DIR}/*.vert"
+    "${SHADER_SOURCE_DIR}/*.frag"
+    "${SHADER_SOURCE_DIR}/*.comp"
+    "${SHADER_SOURCE_DIR}/*.geom"
+    "${SHADER_SOURCE_DIR}/*.tesc"
+    "${SHADER_SOURCE_DIR}/*.tese"
+)
+
 # Function to determine shader stage from filename/extension
 function(get_shader_stage SHADER_FILE OUT_STAGE)
     get_filename_component(FILENAME ${SHADER_FILE} NAME)

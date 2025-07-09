@@ -52,14 +52,14 @@ void LeafEngine::createSDLWindow() {
 
   SDL_WindowFlags sdlFlags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN);
 
-  context.window = SDL_CreateWindow("LeafEngine", 0,0, sdlFlags);
+  context.window = SDL_CreateWindow("LeafEngine", 1700, 900, sdlFlags);
   if (!context.window) {
-    fmt::println("failed to init SDL window: {}", SDL_GetError());
+    fmt::print("failed to init SDL window: {}\n", SDL_GetError());
     std::exit(-1);
   }
 
   if (!SDL_ShowWindow(context.window)) {
-    fmt::println("failed to show SDL window: {}", SDL_GetError());
+    fmt::print("failed to show SDL window: {}\n", SDL_GetError());
     std::exit(-1);
   }
 }
@@ -304,6 +304,8 @@ void LeafEngine::draw() {
   vkAssert(vkAcquireNextImage2KHR(context.device, &acquireInfo,
                                   &swapchainImageIndex));
 
+  fmt::println("swapchainIndex: {} {}",renderData.frameNumber, swapchainImageIndex);
+  fmt::println("get curr frame: {}", (void*)&getCurrentFrame());
   // render commands
   VkCommandBuffer cmd = getCurrentFrame().mainCommandBuffer;
   vkAssert(vkResetCommandBuffer(cmd, 0));
@@ -468,5 +470,5 @@ void LeafEngine::initPipelines() {
 
   vkDestroyShaderModule(context.device, computeShader, nullptr);
 
-  // add pipeline and pipeline layout to destroyer
+  // TODO add pipeline and pipeline layout to destroyer
 }
