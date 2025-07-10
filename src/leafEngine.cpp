@@ -304,7 +304,8 @@ void LeafEngine::draw() {
   vkAssert(vkAcquireNextImage2KHR(context.device, &acquireInfo,
                                   &swapchainImageIndex));
 
-  fmt::println("swapchainIndex: {} {}",renderData.frameNumber, swapchainImageIndex);
+  fmt::println("swapchainIndex: {} {}", renderData.frameNumber,
+               swapchainImageIndex);
   fmt::println("get curr frame: {}", (void*)&getCurrentFrame());
   // render commands
   VkCommandBuffer cmd = getCurrentFrame().mainCommandBuffer;
@@ -396,7 +397,7 @@ void LeafEngine::drawBackground(VkCommandBuffer cmd) {
   // vkCmdClearColorImage(cmd, renderData.drawImage.image,
   // VK_IMAGE_LAYOUT_GENERAL,
   //                      &clearValue, 1, &clearRange);
-
+  //
   vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, renderData.pipeline);
 
   vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,

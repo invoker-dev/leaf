@@ -90,10 +90,3 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     volk
 )
 
-
-# ------------------------------------------------------
-# Slang Shader Compilation
-# ------------------------------------------------------
-
-include(cmake/spirv.cmake)
-
