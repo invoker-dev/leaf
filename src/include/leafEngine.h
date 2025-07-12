@@ -20,7 +20,7 @@ inline void vkAssert(VkResult result) {
 
 constexpr bool useValidationLayers = true;
 
-constexpr int framesInFlight = 2;
+constexpr int framesInFlight = 4;
 
 class LeafEngine {
 public:

@@ -9,5 +9,5 @@ void transitionImage(VkCommandBuffer cmd, VkImage image,
 
 void copyImageToImage (VkCommandBuffer commandBuffer, VkImage src, VkImage dst, VkExtent2D srcSize, VkExtent2D dstSize);
 
-VkShaderModule loadShaderModule(const std::string name, VkDevice device);
+VkShaderModule loadShaderModule(const std::string& name, VkDevice device);
 }

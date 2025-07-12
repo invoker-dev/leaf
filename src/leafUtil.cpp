@@ -75,7 +75,7 @@ void copyImageToImage(VkCommandBuffer commandBuffer, VkImage src, VkImage dst,
   vkCmdBlitImage2(commandBuffer, &blitInfo);
 }
 
-VkShaderModule loadShaderModule(const std::string fileName, VkDevice device) {
+VkShaderModule loadShaderModule(const std::string& fileName, VkDevice device) {
 
   std::string   path = "build/shaders/" + fileName;
   std::ifstream file(path, std::ios::ate | std::ios::binary);

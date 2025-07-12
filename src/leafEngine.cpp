@@ -158,6 +158,7 @@ void LeafEngine::getQueues() {
   renderData.graphicsQueue = graphicsQueue.value();
   renderData.graphicsQueueFamily =
       context.device.get_queue_index(vkb::QueueType::graphics).value();
+
   // auto presentQueue = context.device.get_queue(vkb::QueueType::present);
   // if (!presentQueue.has_value()) {
   //   fmt::println("failed to get present queue: {}",
@@ -406,6 +407,27 @@ void LeafEngine::drawBackground(VkCommandBuffer cmd) {
 
   vkCmdDispatch(cmd, std::ceil(renderData.drawExtent.width / 16.0),
                 std::ceil(renderData.drawExtent.height / 16.0), 1);
+
+  VkImageMemoryBarrier barrier{};
+  barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+  barrier.oldLayout           = VK_IMAGE_LAYOUT_GENERAL;
+  barrier.newLayout           = VK_IMAGE_LAYOUT_GENERAL; // layout stays same
+  barrier.srcAccessMask       = VK_ACCESS_SHADER_WRITE_BIT;
+  barrier.dstAccessMask       = VK_ACCESS_TRANSFER_READ_BIT;
+  barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.image               = renderData.drawImage.image;
+  barrier.subresourceRange    = {
+         .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+         .baseMipLevel   = 0,
+         .levelCount     = 1,
+         .baseArrayLayer = 0,
+         .layerCount     = 1,
+  };
+
+  vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                       VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
+                       nullptr, 1, &barrier);
 }
 
 void LeafEngine::initDescriptors() {

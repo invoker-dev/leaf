@@ -69,6 +69,7 @@ void DescriptorLayoutBuilder::addBinding(uint32_t         binding,
   layoutBinding.binding         = binding;
   layoutBinding.descriptorCount = 1;
   layoutBinding.descriptorType  = type;
+  layoutBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
   bindings.push_back(layoutBinding);
 }
@@ -89,6 +90,7 @@ DescriptorLayoutBuilder::build(VkDevice device, VkShaderStageFlags shaderStages,
   info.pNext        = pNext;
   info.pBindings    = bindings.data();
   info.bindingCount = (uint32_t)bindings.size();
+  // info.bindingCount = 1;
   info.flags        = flags;
 
   VkDescriptorSetLayout set;
@@ -119,10 +121,7 @@ DescriptorAllocator::DescriptorAllocator(VkDevice device, uint32_t maxSets,
   info.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
   info.pPoolSizes    = poolSizes.data();
 
-  fmt::println("poolbeforeCreate: {}", (void*)pool);
   vkAssert(vkCreateDescriptorPool(device, &info, nullptr, &pool));
-
-  fmt::println("poolafterCreate: {}", (void*)pool);
 }
 
 DescriptorAllocator::~DescriptorAllocator() {
@@ -140,11 +139,7 @@ VkDescriptorSet DescriptorAllocator::allocate(VkDescriptorSetLayout layout) {
 
   VkDescriptorSet set;
 
-  fmt::println("poolbeforeAllocation: {}", (void*)pool);
-
   vkAssert(vkAllocateDescriptorSets(device, &info, &set));
-
-  fmt::println("poolafterAllocation: {}", (void*)pool);
 
   return set;
 }
