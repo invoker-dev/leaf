@@ -49,7 +49,9 @@ target_compile_options(VulkanMemoryAllocator INTERFACE -w)
 # ------------------------------------------------------
 # Dependencies -- static libraries
 # ------------------------------------------------------add_library(imgui_locAL STATIC
-add_library(imgui_local STATIC
+add_library(imgui STATIC
+    ./lib/imgui/imgui.cpp
+    ./lib/imgui/imgui_demo.cpp
     ./lib/imgui/imgui_draw.cpp
     ./lib/imgui/imgui_tables.cpp
     ./lib/imgui/imgui_widgets.cpp
@@ -57,12 +59,12 @@ add_library(imgui_local STATIC
     ./lib/imgui/backends/imgui_impl_sdl3.cpp
 )
 
-target_include_directories(imgui_local PUBLIC
+target_include_directories(imgui PUBLIC
     lib/imgui
     lib/imgui/backends
 )
 
-target_compile_options(imgui_local PRIVATE -w)
+target_compile_options(imgui PRIVATE -w)
 
 # ------------------------------------------------------
 # Main executable
@@ -86,7 +88,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     glm::glm
     fmt::fmt
     fastgltf
-    imgui_local
+    imgui
     volk
 )
 

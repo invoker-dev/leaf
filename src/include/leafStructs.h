@@ -1,7 +1,7 @@
 #pragma once
 
-#include<VkBootstrap.h>
-#include<vk_mem_alloc.h>
+#include <VkBootstrap.h>
+#include <vk_mem_alloc.h>
 
 struct AllocatedImage {
   VkImage       image;
@@ -14,7 +14,13 @@ struct AllocatedImage {
 struct FrameData {
 
   VkCommandPool   commandPool;
-  VkCommandBuffer mainCommandBuffer;
+  VkCommandBuffer commandBuffer;
   VkSemaphore     swapchainSemaphore, renderSemaphore;
   VkFence         renderFence;
+};
+
+struct imguiContext {
+  VkDescriptorPool descriptorPool;
+  VkCommandPool    commandPool;
+  VkCommandBuffer  commandBuffer;
 };

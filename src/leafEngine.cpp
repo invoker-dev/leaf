@@ -1,3 +1,4 @@
+#include <fmt/base.h>
 #include <leafEngine.h>
 
 #include <SDL3/SDL_error.h>
@@ -7,15 +8,18 @@
 #include <SDL3/SDL_vulkan.h>
 #include <VkBootstrap.h>
 #include <cmath>
+#include <imgui.h>
+#include <imgui_impl_sdl3.h>
+#include <imgui_impl_vulkan.h>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_wayland.h>
 #define VMA_IMPLEMENTATION
 #include <vector>
 #include <vk_mem_alloc.h>
 
+#include <leafInit.h>
 #include <leafStructs.h>
 #include <leafUtil.h>
-#include<leafInit.h>
 
 LeafEngine::LeafEngine() {
 
@@ -25,6 +29,7 @@ LeafEngine::LeafEngine() {
   initSwapchain();
   initCommands();
   initSynchronization();
+  initImGUI();
 }
 LeafEngine::~LeafEngine() {
 
@@ -34,6 +39,7 @@ LeafEngine::~LeafEngine() {
   vulkanDestroyer.flush(device, allocator);
 
   vmaDestroyAllocator(allocator);
+  ImGui_ImplVulkan_Shutdown();
   vkb::destroy_swapchain(swapchain);
   vkb::destroy_device(device);
   vkb::destroy_surface(instance, surface);
@@ -46,7 +52,7 @@ void LeafEngine::createSDLWindow() {
 
   SDL_WindowFlags sdlFlags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN);
 
-  window = SDL_CreateWindow("LeafEngine", 600, 600, sdlFlags);
+  window = SDL_CreateWindow("LeafEngine", 1200, 800, sdlFlags);
   if (!window) {
     fmt::print("failed to init SDL window: {}\n", SDL_GetError());
     std::exit(-1);
@@ -176,10 +182,11 @@ void LeafEngine::initSwapchain() {
   }
   vkb::destroy_swapchain(swapchain);
 
-  swapchain           = returnedSwapchain.value();
-  swapchainImageViews = swapchain.get_image_views().value();
-  swapchainImages     = swapchain.get_images().value();
-  swapchainExtent     = swapchain.extent;
+  swapchain            = returnedSwapchain.value();
+  swapchainImageViews  = swapchain.get_image_views().value();
+  swapchainImages      = swapchain.get_images().value();
+  swapchainExtent      = swapchain.extent;
+  swapchainImageFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
 
   VkExtent3D drawImageExtent = {};
   drawImageExtent.width      = windowExtent.width;
@@ -236,7 +243,7 @@ void LeafEngine::initCommands() {
     cmdAllocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 
     vkAssert(dispatch.allocateCommandBuffers(&cmdAllocInfo,
-                                             &frames[i].mainCommandBuffer));
+                                             &frames[i].commandBuffer));
   }
 }
 
@@ -264,6 +271,95 @@ void LeafEngine::initSynchronization() {
   }
 }
 
+void LeafEngine::initImGUI() {
+  IMGUI_CHECKVERSION();
+  ImGui::CreateContext();
+  ImGuiIO& io = ImGui::GetIO();
+  io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+
+  ImGui::StyleColorsDark();
+  ImGuiStyle& style = ImGui::GetStyle();
+  // style.ScaleAllSizes(2);
+  // style.FontScaleDpi(2.0);
+  VkDescriptorPoolSize pool_sizes[] = {
+      {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
+      {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
+      {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000},
+      {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000},
+      {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000},
+      {VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000},
+      {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
+      {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000},
+      {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000},
+      {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000},
+      {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000}};
+
+  VkDescriptorPoolCreateInfo poolInfo = {};
+  poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+  poolInfo.flags         = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+  poolInfo.maxSets       = 1000;
+  poolInfo.poolSizeCount = (uint32_t)std::size(pool_sizes);
+  poolInfo.pPoolSizes    = pool_sizes;
+
+  vkAssert(dispatch.createDescriptorPool(&poolInfo, nullptr,
+                                         &imguiContext.descriptorPool));
+
+  VkPipelineCreateInfoKHR pipelineInfo = {};
+
+  ImGui_ImplVulkan_InitInfo initInfo{};
+  initInfo.Instance                    = instance;
+  initInfo.PhysicalDevice              = physicalDevice;
+  initInfo.Device                      = device;
+  initInfo.QueueFamily                 = graphicsQueueFamily;
+  initInfo.Queue                       = graphicsQueue;
+  initInfo.PipelineCache               = VK_NULL_HANDLE;
+  initInfo.DescriptorPool              = imguiContext.descriptorPool;
+  initInfo.Subpass                     = 0;
+  initInfo.MinImageCount               = 3;
+  initInfo.ImageCount                  = 3;
+  initInfo.UseDynamicRendering         = true;
+  initInfo.PipelineRenderingCreateInfo = {};
+  initInfo.PipelineRenderingCreateInfo.sType =
+      VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+  initInfo.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
+  initInfo.PipelineRenderingCreateInfo.pColorAttachmentFormats =
+      &swapchainImageFormat;
+  initInfo.MSAASamples     = VK_SAMPLE_COUNT_1_BIT;
+  initInfo.Allocator       = nullptr;
+  initInfo.CheckVkResultFn = vkAssert;
+
+  if (!ImGui_ImplSDL3_InitForVulkan(window)) {
+    fmt::println("ImGui_ImplSDL3_InitForVulkan failed");
+  }
+  if (!ImGui_ImplVulkan_Init(&initInfo)) {
+    fmt::println("failed to init IMGUI");
+  }
+
+  vulkanDestroyer.addDescriptorPool(imguiContext.descriptorPool);
+}
+
+void LeafEngine::drawImGUI(VkCommandBuffer cmd, VkImageView targetImage) {
+
+  VkRenderingAttachmentInfo colorAttachment = {};
+  colorAttachment.sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+  colorAttachment.imageView   = targetImage;
+  colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  colorAttachment.loadOp      = VK_ATTACHMENT_LOAD_OP_LOAD;
+  colorAttachment.storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
+
+  VkRenderingInfo renderInfo      = {};
+  renderInfo.sType                = VK_STRUCTURE_TYPE_RENDERING_INFO;
+  renderInfo.renderArea           = VkRect2D{VkOffset2D{0, 0}, swapchainExtent};
+  renderInfo.layerCount           = 1;
+  renderInfo.colorAttachmentCount = 1;
+  renderInfo.pColorAttachments    = &colorAttachment;
+  renderInfo.pDepthAttachment     = nullptr;
+  renderInfo.pStencilAttachment   = nullptr;
+
+  dispatch.cmdBeginRendering(cmd, &renderInfo);
+  ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
+  dispatch.cmdEndRendering(cmd);
+}
 void LeafEngine::draw() {
   // wait for GPU to finish work
 
@@ -286,7 +382,7 @@ void LeafEngine::draw() {
   //              swapchainImageIndex);
   // fmt::println("get curr frame: {}", (void*)&getCurrentFrame());
   // render commands
-  VkCommandBuffer cmd = getCurrentFrame().mainCommandBuffer;
+  VkCommandBuffer cmd = getCurrentFrame().commandBuffer;
   vkAssert(dispatch.resetCommandBuffer(cmd, 0));
 
   VkCommandBufferBeginInfo cmdBeginInfo = {};
@@ -315,6 +411,11 @@ void LeafEngine::draw() {
 
   leafUtil::transitionImage(cmd, swapchainImages[swapchainImageIndex],
                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+  drawImGUI(cmd, swapchainImageViews[swapchainImageIndex]);
+  leafUtil::transitionImage(cmd, swapchainImages[swapchainImageIndex],
+                            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                             VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
   vkAssert(dispatch.endCommandBuffer(cmd));
