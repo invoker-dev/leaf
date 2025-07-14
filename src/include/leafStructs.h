@@ -45,38 +45,6 @@ struct FrameData {
   VkSemaphore     swapchainSemaphore, renderSemaphore;
   VkFence         renderFence;
 };
-class DescriptorLayoutBuilder {
-public:
-  DescriptorLayoutBuilder() {};
-  ~DescriptorLayoutBuilder() { clear(); }
-  void                  addBinding(uint32_t binding, VkDescriptorType type);
-  void                  clear();
-  VkDescriptorSetLayout build(VkDevice device, VkShaderStageFlags shaderStages,
-                              void*                            pNext,
-                              VkDescriptorSetLayoutCreateFlags flags);
-
-private:
-  std::vector<VkDescriptorSetLayoutBinding> bindings;
-};
-
-struct PoolSizeRatio {
-  VkDescriptorType type;
-  float            ratio;
-};
-
-class DescriptorAllocator {
-public:
-  DescriptorAllocator(VkDevice device, uint32_t maxSets,
-                      std::span<PoolSizeRatio> poolRatios);
-  ~DescriptorAllocator();
-
-  void            clear();
-  VkDescriptorSet allocate(VkDescriptorSetLayout layout);
-
-private:
-  VkDescriptorPool pool;
-  VkDevice         device;
-};
 
 struct VulkanContext {
   vkb::Instance              instance;
@@ -92,7 +60,6 @@ struct VulkanContext {
   SDL_Window*                window;
   VmaAllocator               allocator;
 
-  std::optional<DescriptorAllocator> descriptorAllocator;
 
   VulkanDestroyer vulkanDestroyer;
 };

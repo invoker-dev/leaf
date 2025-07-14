@@ -29,8 +29,7 @@ LeafEngine::LeafEngine() {
   initSwapchain();
   initCommands();
   initSynchronization();
-  initDescriptors();
-  initPipelines();
+
 }
 LeafEngine::~LeafEngine() {
 
@@ -52,7 +51,7 @@ void LeafEngine::createSDLWindow() {
 
   SDL_WindowFlags sdlFlags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN);
 
-  context.window = SDL_CreateWindow("LeafEngine", 1700, 900, sdlFlags);
+  context.window = SDL_CreateWindow("LeafEngine", 600,600, sdlFlags);
   if (!context.window) {
     fmt::print("failed to init SDL window: {}\n", SDL_GetError());
     std::exit(-1);
@@ -387,111 +386,16 @@ void LeafEngine::draw() {
 
 void LeafEngine::drawBackground(VkCommandBuffer cmd) {
 
-  // VkClearColorValue clearValue;
-  //
-  // float flash = std::abs(std::sin(renderData.frameNumber / 120.f));
-  // clearValue  = {{0.2, 0.1, flash, 1.0f}};
-  //
-  // VkImageSubresourceRange clearRange =
-  //     leafInit::imageSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
-  //
-  // vkCmdClearColorImage(cmd, renderData.drawImage.image,
-  // VK_IMAGE_LAYOUT_GENERAL,
-  //                      &clearValue, 1, &clearRange);
-  //
-  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, renderData.pipeline);
+  VkClearColorValue clearValue;
 
-  vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
-                          renderData.pipelineLayout, 0, 1,
-                          &renderData.drawImageDescriptors, 0, nullptr);
+  float flash = std::abs(std::sin(renderData.frameNumber / 120.f));
+  clearValue  = {{0.2, 0.1, flash, 1.0f}};
 
-  vkCmdDispatch(cmd, std::ceil(renderData.drawExtent.width / 16.0),
-                std::ceil(renderData.drawExtent.height / 16.0), 1);
+  VkImageSubresourceRange clearRange =
+      leafInit::imageSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
 
-  VkImageMemoryBarrier barrier{};
-  barrier.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-  barrier.oldLayout           = VK_IMAGE_LAYOUT_GENERAL;
-  barrier.newLayout           = VK_IMAGE_LAYOUT_GENERAL; // layout stays same
-  barrier.srcAccessMask       = VK_ACCESS_SHADER_WRITE_BIT;
-  barrier.dstAccessMask       = VK_ACCESS_TRANSFER_READ_BIT;
-  barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-  barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-  barrier.image               = renderData.drawImage.image;
-  barrier.subresourceRange    = {
-         .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
-         .baseMipLevel   = 0,
-         .levelCount     = 1,
-         .baseArrayLayer = 0,
-         .layerCount     = 1,
-  };
+  vkCmdClearColorImage(cmd, renderData.drawImage.image,
+  VK_IMAGE_LAYOUT_GENERAL,
+                       &clearValue, 1, &clearRange);
 
-  vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                       VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
-                       nullptr, 1, &barrier);
-}
-
-void LeafEngine::initDescriptors() {
-  std::vector<PoolSizeRatio> sizes = {{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1}};
-  context.descriptorAllocator.emplace(context.device, 10, sizes);
-
-  DescriptorLayoutBuilder builder = {};
-  builder.addBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-  renderData.drawImageDescriptorLayout =
-      builder.build(context.device, VK_SHADER_STAGE_COMPUTE_BIT, nullptr, 0);
-
-  renderData.drawImageDescriptors = context.descriptorAllocator->allocate(
-      renderData.drawImageDescriptorLayout);
-
-  VkDescriptorImageInfo imageInfo = {};
-  imageInfo.imageLayout           = VK_IMAGE_LAYOUT_GENERAL;
-  imageInfo.imageView             = renderData.drawImage.imageView;
-
-  VkWriteDescriptorSet drawImageWrite = {};
-  drawImageWrite.sType                = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-  drawImageWrite.dstBinding           = 0;
-  drawImageWrite.dstSet               = renderData.drawImageDescriptors;
-  drawImageWrite.descriptorType       = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-  drawImageWrite.pImageInfo           = &imageInfo;
-  drawImageWrite.descriptorCount      = 1;
-
-  vkUpdateDescriptorSets(context.device, 1, &drawImageWrite, 0, nullptr);
-
-  context.vulkanDestroyer.addDescriptorSetLayout(
-      renderData.drawImageDescriptorLayout);
-}
-
-void LeafEngine::initPipelines() {
-
-  VkPipelineLayoutCreateInfo computeLayout = {};
-  computeLayout.sType          = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-  computeLayout.pSetLayouts    = &renderData.drawImageDescriptorLayout;
-  computeLayout.setLayoutCount = 1;
-  vkAssert(vkCreatePipelineLayout(context.device, &computeLayout, nullptr,
-                                  &renderData.pipelineLayout));
-
-  VkShaderModule computeShader =
-      leafUtil::loadShaderModule("gradient.spv", context.device);
-  if (!computeShader) {
-    fmt::println("could not load compute shader");
-  }
-
-  VkPipelineShaderStageCreateInfo stageInfo = {};
-  stageInfo.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-  stageInfo.stage  = VK_SHADER_STAGE_COMPUTE_BIT;
-  stageInfo.module = computeShader;
-  stageInfo.pName  = "main";
-
-  VkComputePipelineCreateInfo computePipelineCreateInfo{};
-  computePipelineCreateInfo.sType =
-      VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-  computePipelineCreateInfo.layout = renderData.pipelineLayout;
-  computePipelineCreateInfo.stage  = stageInfo;
-
-  vkAssert(vkCreateComputePipelines(context.device, VK_NULL_HANDLE, 1,
-                                    &computePipelineCreateInfo, nullptr,
-                                    &renderData.pipeline));
-
-  vkDestroyShaderModule(context.device, computeShader, nullptr);
-
-  // TODO add pipeline and pipeline layout to destroyer
 }

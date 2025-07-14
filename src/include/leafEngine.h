@@ -43,8 +43,6 @@ private:
   void initSwapchain();
   void initCommands();
   void initSynchronization();
-  void initDescriptors();
-  void initPipelines();
 
   void drawBackground(VkCommandBuffer cmd);
 };
