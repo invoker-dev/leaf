@@ -54,19 +54,16 @@ private:
   std::vector<VkFramebuffer> frameBuffers;
   uint32_t                   frameNumber;
 
-  VkPipelineLayout pipelineLayout;
-  VkPipeline       pipeline;
-
   AllocatedImage drawImage;
   VkExtent2D     drawExtent;
 
+  VkPipelineLayout      pipelineLayout;
+  VkPipeline            pipeline;
   VkDescriptorSet       drawImageDescriptors;
   VkDescriptorSetLayout drawImageDescriptorLayout;
 
-  FrameData     frames[framesInFlight];
-  FrameData&    getCurrentFrame() {
-    return frames[frameNumber % framesInFlight];
-  }
+  FrameData  frames[framesInFlight];
+  FrameData& getCurrentFrame() { return frames[frameNumber % framesInFlight]; }
 
   void createSDLWindow();
   void initVulkan();

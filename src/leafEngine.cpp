@@ -144,13 +144,13 @@ void LeafEngine::initVulkan() {
 }
 
 void LeafEngine::getQueues() {
-  auto graphicsQueue = device.get_queue(vkb::QueueType::graphics);
-  if (!graphicsQueue.has_value()) {
+  auto gq = device.get_queue(vkb::QueueType::graphics);
+  if (!gq.has_value()) {
     fmt::println("failed to get graphics queue: {}",
-                 graphicsQueue.error().message());
+                 gq.error().message());
     std::exit(-1);
   }
-  graphicsQueue = graphicsQueue.value();
+  graphicsQueue = gq.value();
   graphicsQueueFamily =
       device.get_queue_index(vkb::QueueType::graphics).value();
 }
@@ -181,7 +181,7 @@ void LeafEngine::initSwapchain() {
   }
   vkb::destroy_swapchain(swapchain);
 
-  swapchain                      = returnedSwapchain.value();
+  swapchain           = returnedSwapchain.value();
   swapchainImageViews = swapchain.get_image_views().value();
   swapchainImages     = swapchain.get_images().value();
   swapchainExtent     = swapchain.extent;
@@ -210,12 +210,10 @@ void LeafEngine::initSwapchain() {
       VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
   vmaCreateImage(allocator, &renderImageCreateInfo, &renderImageAllocationInfo,
-                 &drawImage.image, &drawImage.allocation,
-                 nullptr);
+                 &drawImage.image, &drawImage.allocation, nullptr);
 
   VkImageViewCreateInfo renderImageViewCreateInfo =
-      leafInit::imageViewCreateInfo(drawImage.imageFormat,
-                                    drawImage.image,
+      leafInit::imageViewCreateInfo(drawImage.imageFormat, drawImage.image,
                                     VK_IMAGE_ASPECT_COLOR_BIT);
 
   vkAssert(dispatch.createImageView(&renderImageViewCreateInfo, nullptr,
@@ -303,27 +301,26 @@ void LeafEngine::draw() {
   vkAssert(dispatch.beginCommandBuffer(cmd, &cmdBeginInfo));
 
   // transition image to writable
-  leafUtil::transitionImage(cmd, drawImage.image,
-                            VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+  leafUtil::transitionImage(cmd, drawImage.image, VK_IMAGE_LAYOUT_UNDEFINED,
+                            VK_IMAGE_LAYOUT_GENERAL);
 
   drawBackground(cmd);
 
   // transition image to drawable
-  leafUtil::transitionImage(cmd, drawImage.image,
-                            VK_IMAGE_LAYOUT_GENERAL,
+  leafUtil::transitionImage(cmd, drawImage.image, VK_IMAGE_LAYOUT_GENERAL,
                             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 
-  leafUtil::transitionImage(
-      cmd, swapchainImages[swapchainImageIndex],
-      VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+  leafUtil::transitionImage(cmd, swapchainImages[swapchainImageIndex],
+                            VK_IMAGE_LAYOUT_UNDEFINED,
+                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
   leafUtil::copyImageToImage(cmd, drawImage.image,
-                             swapchainImages[swapchainImageIndex],
-                             drawExtent, swapchainExtent);
+                             swapchainImages[swapchainImageIndex], drawExtent,
+                             swapchainExtent);
 
-  leafUtil::transitionImage(
-      cmd, swapchainImages[swapchainImageIndex],
-      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+  leafUtil::transitionImage(cmd, swapchainImages[swapchainImageIndex],
+                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
   vkAssert(dispatch.endCommandBuffer(cmd));
 
@@ -379,7 +376,6 @@ void LeafEngine::drawBackground(VkCommandBuffer cmd) {
   VkImageSubresourceRange clearRange =
       leafInit::imageSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
 
-  dispatch.cmdClearColorImage(cmd, drawImage.image,
-                              VK_IMAGE_LAYOUT_GENERAL, &clearValue, 1,
-                              &clearRange);
+  dispatch.cmdClearColorImage(cmd, drawImage.image, VK_IMAGE_LAYOUT_GENERAL,
+                              &clearValue, 1, &clearRange);
 }
