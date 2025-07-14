@@ -1,11 +1,7 @@
-#include "leafEngine.h"
-#include <VkBootstrap.h>
-#include <filesystem>
-#include <fmt/base.h>
-#include <fstream>
-#include <leafInit.h>
 #include <leafUtil.h>
-#include <vulkan/vulkan_core.h>
+#include <fstream>
+#include <VkBootstrap.h>
+#include <leafInit.h>
 
 namespace leafUtil {
 

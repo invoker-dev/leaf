@@ -1,22 +1,11 @@
 #pragma once
 #include <SDL3/SDL.h>
-#include <SDL3/SDL_video.h>
 #include <VkBootstrap.h>
-#include <fmt/base.h>
-#include <leafStructs.h>
-#include <vulkan/vk_enum_string_helper.h>
-#include <vulkan/vulkan.h>
-#include <vulkan/vulkan_core.h>
+#include <fmt/core.h>
+#include <vk_mem_alloc.h>
 
-inline void vkAssert(VkResult result) {
-  if (result == VK_SUBOPTIMAL_KHR) {
-    // do nothing, for now. Should recreate swapchain
-    // only a problem on X11
-  } else if (result != VK_SUCCESS) {
-    fmt::print("Detected Vulkan error: {}\n", string_VkResult(result));
-    std::abort();
-  }
-}
+#include <leafStructs.h>
+#include <vulkanDestroyer.h>
 
 constexpr bool useValidationLayers = true;
 

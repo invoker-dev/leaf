@@ -1,25 +1,21 @@
-#include "leafStructs.h"
+#include <leafEngine.h>
+
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_init.h>
-#include <SDL3/SDL_mutex.h>
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
 #include <VkBootstrap.h>
 #include <cmath>
-#include <cstdint>
-#include <cstdlib>
-#include <fmt/base.h>
-#include <fmt/printf.h>
-#include <leafEngine.h>
-#include <leafInit.h>
-#include <leafUtil.h>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_wayland.h>
 #define VMA_IMPLEMENTATION
-#include <slang.h>
 #include <vector>
 #include <vk_mem_alloc.h>
+
+#include <leafStructs.h>
+#include <leafUtil.h>
+#include<leafInit.h>
 
 LeafEngine::LeafEngine() {
 
@@ -146,8 +142,7 @@ void LeafEngine::initVulkan() {
 void LeafEngine::getQueues() {
   auto gq = device.get_queue(vkb::QueueType::graphics);
   if (!gq.has_value()) {
-    fmt::println("failed to get graphics queue: {}",
-                 gq.error().message());
+    fmt::println("failed to get graphics queue: {}", gq.error().message());
     std::exit(-1);
   }
   graphicsQueue = gq.value();
