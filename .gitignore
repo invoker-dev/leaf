@@ -10,19 +10,19 @@
 compile_commands.json
 .cache
 
+
+*.spv
+
+*.log
+*.tmp
+*.bak
+
+*.sh
+*.ini
+
+
 # Linux
 *.so
 *.a
 *.out
 *.o
-
-# Vulkan shader binaries
-*.spv
-
-# Logs and temporary files
-*.log
-*.tmp
-*.bak
-
-# ignore local scripts
-*.sh
