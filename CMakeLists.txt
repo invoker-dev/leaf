@@ -92,3 +92,34 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     volk
 )
 
+
+
+# ------------------------------------------------------
+# Compile shaders
+# ------------------------------------------------------
+
+set(COMPILED_SHADER_FILES "")
+
+# stolen from vk-bootstrap
+macro(compile_shader SHADER_NAME)
+    set(SHADER_SOURCE ${CMAKE_SOURCE_DIR}/src/shaders/${SHADER_NAME})
+    set(SHADER_SPIRV_NAME ${SHADER_NAME}.spv)
+    set(SHADER_SPIRV_PATH ${CMAKE_SOURCE_DIR}/build/shaders/${SHADER_SPIRV_NAME})
+
+    add_custom_command(
+        OUTPUT ${SHADER_SPIRV_PATH}
+        COMMAND glslang -V ${SHADER_SOURCE} -o ${SHADER_SPIRV_PATH}
+        DEPENDS ${SHADER_SOURCE}
+        COMMENT "Shader ${SHADER_NAME} compiled"
+    )
+
+    list(APPEND COMPILED_SHADER_FILES ${SHADER_SPIRV_PATH})
+endmacro()
+
+compile_shader(triangle.vert)
+compile_shader(triangle.frag)
+
+add_custom_target(compile_shaders ALL
+    DEPENDS ${COMPILED_SHADER_FILES}
+)
+
