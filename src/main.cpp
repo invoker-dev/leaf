@@ -34,7 +34,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
   ImGui_ImplSDL3_NewFrame();
   ImGui::NewFrame();
 
-  ImGui::ShowDemoWindow();
+  // ImGui::ShowDemoWindow();
 
   ImGui::Render();
 

@@ -50,6 +50,9 @@ private:
 
   imguiContext imguiContext;
 
+  VkPipeline       pipeline;
+  VkPipelineLayout pipelineLayout;
+
   FrameData  frames[framesInFlight];
   FrameData& getCurrentFrame() { return frames[frameNumber % framesInFlight]; }
 
@@ -60,7 +63,9 @@ private:
   void initCommands();
   void initSynchronization();
   void initImGUI();
+  void initPipeline();
 
   void drawImGUI(VkCommandBuffer cmd, VkImageView targetImage);
   void drawBackground(VkCommandBuffer cmd);
+  void drawGeometry(VkCommandBuffer cmd);
 };

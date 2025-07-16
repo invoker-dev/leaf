@@ -1,7 +1,8 @@
-#include <leafUtil.h>
-#include <fstream>
+#include "VkBootstrapDispatch.h"
 #include <VkBootstrap.h>
+#include <fstream>
 #include <leafInit.h>
+#include <leafUtil.h>
 
 namespace leafUtil {
 
@@ -71,13 +72,17 @@ void copyImageToImage(VkCommandBuffer commandBuffer, VkImage src, VkImage dst,
   vkCmdBlitImage2(commandBuffer, &blitInfo);
 }
 
-VkShaderModule loadShaderModule(const std::string& fileName, VkDevice device) {
+VkShaderModule loadShaderModule(const std::string& fileName,
+                                vkb::DispatchTable dispatch) {
 
-  std::string   path = "build/shaders/" + fileName;
+  std::string   path = "build/shaders/" + fileName + ".spv";
   std::ifstream file(path, std::ios::ate | std::ios::binary);
 
   if (!file.is_open()) {
     fmt::println("could not open file");
+    fmt::println("path:{}", path);
+
+
     return nullptr;
   }
 
@@ -97,7 +102,7 @@ VkShaderModule loadShaderModule(const std::string& fileName, VkDevice device) {
   info.pCode                    = buffer.data();
 
   VkShaderModule shaderModule;
-  vkAssert(vkCreateShaderModule(device, &info, nullptr, &shaderModule));
+  vkAssert(dispatch.createShaderModule(&info, nullptr, &shaderModule));
   return shaderModule;
 }
 } // namespace leafUtil

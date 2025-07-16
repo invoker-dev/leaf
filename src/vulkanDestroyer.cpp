@@ -1,4 +1,5 @@
-#include<vulkanDestroyer.h>
+#include "VkBootstrapDispatch.h"
+#include <vulkanDestroyer.h>
 
 void VulkanDestroyer::addImage(AllocatedImage image) {
   images.push_back(image);
@@ -20,39 +21,54 @@ void VulkanDestroyer::addDescriptorPool(VkDescriptorPool pool) {
 void VulkanDestroyer::addDescriptorSetLayout(VkDescriptorSetLayout layout) {
   descriptorSetLayouts.push_back(layout);
 }
-void VulkanDestroyer::flush(VkDevice device, VmaAllocator allocator) {
+
+void VulkanDestroyer::addPipeline(VkPipeline pipeline) {
+  pipelines.push_back(pipeline);
+}
+
+void VulkanDestroyer::addPipelineLayout(VkPipelineLayout pipelineLayout) {
+  pipelineLayouts.push_back(pipelineLayout);
+}
+void VulkanDestroyer::flush(vkb::DispatchTable dispatch,
+                            VmaAllocator       allocator) {
 
   for (auto p : commandPools) {
-    vkDestroyCommandPool(device, p, nullptr);
+    dispatch.destroyCommandPool(p, nullptr);
   }
 
   for (auto i : images) {
-    vkDestroyImageView(device, i.imageView, nullptr);
+    dispatch.destroyImageView(i.imageView, nullptr);
     vmaDestroyImage(allocator, i.image, i.allocation);
   }
   images.clear();
 
   for (auto b : buffers) {
-    vkDestroyBuffer(device, b, nullptr);
+    dispatch.destroyBuffer(b, nullptr);
   }
   buffers.clear();
 
   for (auto s : semaphores) {
-    vkDestroySemaphore(device, s, nullptr);
+    dispatch.destroySemaphore(s, nullptr);
   }
   semaphores.clear();
 
   for (auto f : fences) {
-    vkDestroyFence(device, f, nullptr);
+    dispatch.destroyFence(f, nullptr);
   }
   fences.clear();
 
   for (auto p : descriptorPools) {
-    vkDestroyDescriptorPool(device, p, nullptr);
+    dispatch.destroyDescriptorPool(p, nullptr);
   }
 
   for (auto l : descriptorSetLayouts) {
-    vkDestroyDescriptorSetLayout(device, l, nullptr);
+    dispatch.destroyDescriptorSetLayout(l, nullptr);
+  }
+
+  for (auto p : pipelines) {
+    dispatch.destroyPipeline(p, nullptr);
+  }
+  for (auto l : pipelineLayouts) {
+    dispatch.destroyPipelineLayout(l, nullptr);
   }
 }
-

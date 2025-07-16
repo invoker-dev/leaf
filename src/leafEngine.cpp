@@ -20,6 +20,7 @@
 #include <leafInit.h>
 #include <leafStructs.h>
 #include <leafUtil.h>
+#include <pipelineBuilder.h>
 
 LeafEngine::LeafEngine() {
 
@@ -30,13 +31,14 @@ LeafEngine::LeafEngine() {
   initCommands();
   initSynchronization();
   initImGUI();
+  initPipeline();
 }
 LeafEngine::~LeafEngine() {
 
   vkAssert(dispatch.deviceWaitIdle());
 
   // destroys primitives (images, buffers, fences etc)
-  vulkanDestroyer.flush(device, allocator);
+  vulkanDestroyer.flush(dispatch, allocator);
 
   vmaDestroyAllocator(allocator);
   ImGui_ImplVulkan_Shutdown();
@@ -52,7 +54,7 @@ void LeafEngine::createSDLWindow() {
 
   SDL_WindowFlags sdlFlags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN);
 
-  window = SDL_CreateWindow("LeafEngine", 1200, 800, sdlFlags);
+  window = SDL_CreateWindow("LeafEngine", 2000, 1500, sdlFlags);
   if (!window) {
     fmt::print("failed to init SDL window: {}\n", SDL_GetError());
     std::exit(-1);
@@ -279,8 +281,9 @@ void LeafEngine::initImGUI() {
 
   ImGui::StyleColorsDark();
   ImGuiStyle& style = ImGui::GetStyle();
-  // style.ScaleAllSizes(2);
-  // style.FontScaleDpi(2.0);
+  style.ScaleAllSizes(2);
+  style.FontScaleDpi = 2.0;
+
   VkDescriptorPoolSize pool_sizes[] = {
       {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
       {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
@@ -338,6 +341,44 @@ void LeafEngine::initImGUI() {
   vulkanDestroyer.addDescriptorPool(imguiContext.descriptorPool);
 }
 
+void LeafEngine::initPipeline() {
+
+  VkShaderModule vertexShader =
+      leafUtil::loadShaderModule("triangle.vert", dispatch);
+  VkShaderModule fragmentShader =
+      leafUtil::loadShaderModule("triangle.frag", dispatch);
+
+  VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
+  pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+  pipelineLayoutInfo.flags = 0;
+  pipelineLayoutInfo.setLayoutCount         = 0;
+  pipelineLayoutInfo.pSetLayouts            = nullptr;
+  pipelineLayoutInfo.pushConstantRangeCount = 0;
+  pipelineLayoutInfo.pPushConstantRanges    = nullptr;
+
+  vkAssert(dispatch.createPipelineLayout(&pipelineLayoutInfo, nullptr,
+                                         &pipelineLayout));
+
+  PipelineBuilder pipelineBuilder = PipelineBuilder(dispatch);
+  pipelineBuilder.setLayout(pipelineLayout);
+  pipelineBuilder.setShaders(vertexShader, fragmentShader);
+  pipelineBuilder.setInputTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+  pipelineBuilder.setPolygonMode(VK_POLYGON_MODE_FILL);
+  pipelineBuilder.setCullMode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+  pipelineBuilder.disableMultiSampling();
+  pipelineBuilder.disableBlending();
+  pipelineBuilder.disableDepthTest();
+  pipelineBuilder.setColorAttachmentFormat(drawImage.imageFormat);
+
+  pipeline = pipelineBuilder.build();
+
+  dispatch.destroyShaderModule(vertexShader, nullptr);
+  dispatch.destroyShaderModule(fragmentShader, nullptr);
+
+  vulkanDestroyer.addPipeline(pipeline);
+  vulkanDestroyer.addPipelineLayout(pipelineLayout);
+}
+
 void LeafEngine::drawImGUI(VkCommandBuffer cmd, VkImageView targetImage) {
 
   VkRenderingAttachmentInfo colorAttachment = {};
@@ -360,8 +401,12 @@ void LeafEngine::drawImGUI(VkCommandBuffer cmd, VkImageView targetImage) {
   ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
   dispatch.cmdEndRendering(cmd);
 }
+
 void LeafEngine::draw() {
   // wait for GPU to finish work
+
+  drawExtent.width = swapchainExtent.width;
+  drawExtent.height = swapchainExtent.height;
 
   vkAssert(dispatch.waitForFences(1, &getCurrentFrame().renderFence, true,
                                   1'000'000'000));
@@ -391,14 +436,18 @@ void LeafEngine::draw() {
 
   vkAssert(dispatch.beginCommandBuffer(cmd, &cmdBeginInfo));
 
-  // transition image to writable
   leafUtil::transitionImage(cmd, drawImage.image, VK_IMAGE_LAYOUT_UNDEFINED,
                             VK_IMAGE_LAYOUT_GENERAL);
 
   drawBackground(cmd);
 
-  // transition image to drawable
   leafUtil::transitionImage(cmd, drawImage.image, VK_IMAGE_LAYOUT_GENERAL,
+                            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+  drawGeometry(cmd);
+
+  leafUtil::transitionImage(cmd, drawImage.image,
+                            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 
   leafUtil::transitionImage(cmd, swapchainImages[swapchainImageIndex],
@@ -474,4 +523,45 @@ void LeafEngine::drawBackground(VkCommandBuffer cmd) {
 
   dispatch.cmdClearColorImage(cmd, drawImage.image, VK_IMAGE_LAYOUT_GENERAL,
                               &clearValue, 1, &clearRange);
+}
+
+void LeafEngine::drawGeometry(VkCommandBuffer cmd) {
+  VkRenderingAttachmentInfo colorAttachment = {};
+  colorAttachment.sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+  colorAttachment.imageView   = drawImage.imageView;
+  colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  colorAttachment.loadOp      = VK_ATTACHMENT_LOAD_OP_LOAD;
+  colorAttachment.storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
+  colorAttachment.clearValue  = {};
+
+  VkRenderingInfo renderInfo      = {};
+  renderInfo.sType                = VK_STRUCTURE_TYPE_RENDERING_INFO;
+  renderInfo.renderArea           = VkRect2D{VkOffset2D{0, 0}, drawExtent};
+  renderInfo.layerCount           = 1;
+  renderInfo.colorAttachmentCount = 1;
+  renderInfo.pColorAttachments    = &colorAttachment;
+  renderInfo.pDepthAttachment     = nullptr;
+  renderInfo.pStencilAttachment   = nullptr;
+
+  dispatch.cmdBeginRendering(cmd, &renderInfo);
+  dispatch.cmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+
+  VkViewport viewport = {};
+  viewport.x          = 0;
+  viewport.y          = 0;
+  viewport.width      = drawExtent.width;
+  viewport.height     = drawExtent.height;
+  viewport.minDepth   = 0.f;
+  viewport.maxDepth   = 1.f;
+  dispatch.cmdSetViewport(cmd, 0, 1, &viewport);
+
+  VkRect2D scissor      = {};
+  scissor.offset.x      = 0;
+  scissor.offset.y      = 0;
+  scissor.extent.width  = drawExtent.width;
+  scissor.extent.height = drawExtent.height;
+  dispatch.cmdSetScissor(cmd, 0, 1, &scissor);
+
+  dispatch.cmdDraw(cmd, 3, 1, 0, 0);
+  dispatch.cmdEndRendering(cmd);
 }
