@@ -1,4 +1,6 @@
 #include <fmt/base.h>
+#include <glm/ext/vector_float4.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <leafEngine.h>
 
 #include <SDL3/SDL_error.h>
@@ -281,8 +283,8 @@ void LeafEngine::initImGUI() {
 
   ImGui::StyleColorsDark();
   ImGuiStyle& style = ImGui::GetStyle();
-  style.ScaleAllSizes(2);
-  style.FontScaleDpi = 2.0;
+  // style.ScaleAllSizes(2);
+  // style.FontScaleDpi = 2.0;
 
   VkDescriptorPoolSize pool_sizes[] = {
       {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
@@ -348,13 +350,19 @@ void LeafEngine::initPipeline() {
   VkShaderModule fragmentShader =
       leafUtil::loadShaderModule("triangle.frag", dispatch);
 
+  // PUSH CONSTANT FOR TRI COLOR
+  VkPushConstantRange pushConstantRange = {};
+  pushConstantRange.offset              = 0;
+  pushConstantRange.size                = sizeof(ColorPushData);
+  pushConstantRange.stageFlags          = VK_SHADER_STAGE_FRAGMENT_BIT;
+
   VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
   pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
   pipelineLayoutInfo.flags = 0;
   pipelineLayoutInfo.setLayoutCount         = 0;
   pipelineLayoutInfo.pSetLayouts            = nullptr;
-  pipelineLayoutInfo.pushConstantRangeCount = 0;
-  pipelineLayoutInfo.pPushConstantRanges    = nullptr;
+  pipelineLayoutInfo.pushConstantRangeCount = 1;
+  pipelineLayoutInfo.pPushConstantRanges    = &pushConstantRange;
 
   vkAssert(dispatch.createPipelineLayout(&pipelineLayoutInfo, nullptr,
                                          &pipelineLayout));
@@ -381,6 +389,21 @@ void LeafEngine::initPipeline() {
 
 void LeafEngine::drawImGUI(VkCommandBuffer cmd, VkImageView targetImage) {
 
+  ImGui_ImplVulkan_NewFrame();
+  ImGui_ImplSDL3_NewFrame();
+  ImGui::NewFrame();
+
+  // UI
+  ImGui::Begin("TRIANGLE SLIDER");
+  ImGui::Text("slide:");
+  ImGui::SliderFloat("RED", &triangleColor.r, 0.f, 1.f);
+  ImGui::SliderFloat("GREEN", &triangleColor.g, 0.f, 1.f);
+  ImGui::SliderFloat("BLUE", &triangleColor.b, 0.f, 1.f);
+  ImGui::ColorEdit3("COLOR", glm::value_ptr(triangleColor));
+  ImGui::End();
+
+  ImGui::Render();
+
   VkRenderingAttachmentInfo colorAttachment = {};
   colorAttachment.sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
   colorAttachment.imageView   = targetImage;
@@ -400,17 +423,17 @@ void LeafEngine::drawImGUI(VkCommandBuffer cmd, VkImageView targetImage) {
   dispatch.cmdBeginRendering(cmd, &renderInfo);
   ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
   dispatch.cmdEndRendering(cmd);
+
 }
 
 void LeafEngine::draw() {
   // wait for GPU to finish work
-
-  drawExtent.width = swapchainExtent.width;
-  drawExtent.height = swapchainExtent.height;
-
   vkAssert(dispatch.waitForFences(1, &getCurrentFrame().renderFence, true,
                                   1'000'000'000));
   vkAssert(dispatch.resetFences(1, &getCurrentFrame().renderFence));
+
+  drawExtent.width  = swapchainExtent.width;
+  drawExtent.height = swapchainExtent.height;
 
   uint32_t                  swapchainImageIndex;
   VkAcquireNextImageInfoKHR acquireInfo = {};
@@ -546,6 +569,10 @@ void LeafEngine::drawGeometry(VkCommandBuffer cmd) {
   dispatch.cmdBeginRendering(cmd, &renderInfo);
   dispatch.cmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
+  ColorPushData fragColor = {triangleColor};
+
+  dispatch.cmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT,
+                            0, sizeof(fragColor), &fragColor);
   VkViewport viewport = {};
   viewport.x          = 0;
   viewport.y          = 0;

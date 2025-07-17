@@ -2,6 +2,7 @@
 
 #include <VkBootstrap.h>
 #include <vk_mem_alloc.h>
+#include <glm/vec4.hpp>
 
 struct AllocatedImage {
   VkImage       image;
@@ -23,4 +24,8 @@ struct imguiContext {
   VkDescriptorPool descriptorPool;
   VkCommandPool    commandPool;
   VkCommandBuffer  commandBuffer;
+};
+
+struct ColorPushData{
+  glm::vec4 color;
 };

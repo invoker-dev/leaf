@@ -2,6 +2,7 @@
 #include <SDL3/SDL.h>
 #include <VkBootstrap.h>
 #include <fmt/core.h>
+#include <glm/ext/vector_float4.hpp>
 #include <vk_mem_alloc.h>
 
 #include <leafStructs.h>
@@ -56,6 +57,9 @@ private:
   FrameData  frames[framesInFlight];
   FrameData& getCurrentFrame() { return frames[frameNumber % framesInFlight]; }
 
+  // TEMP
+  glm::vec4 triangleColor;
+  
   void createSDLWindow();
   void initVulkan();
   void getQueues();
