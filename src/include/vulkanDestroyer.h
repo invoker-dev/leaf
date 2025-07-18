@@ -1,10 +1,11 @@
+#pragma once
 #include "VkBootstrapDispatch.h"
 #include <VkBootstrap.h>
 #include <leafStructs.h>
 class VulkanDestroyer { // DOOM!
 public:
   void addImage(AllocatedImage image);
-  void addBuffer(VkBuffer buffer);
+  void addBuffer(AllocatedBuffer buffer);
   void addCommandPool(VkCommandPool pool);
   void addSemaphore(VkSemaphore semaphore);
   void addFence(VkFence fence);
@@ -17,7 +18,7 @@ public:
 
 private:
   std::vector<AllocatedImage>        images;
-  std::vector<VkBuffer>              buffers;
+  std::vector<AllocatedBuffer>       buffers;
   std::vector<VkCommandPool>         commandPools;
   std::vector<VkSemaphore>           semaphores;
   std::vector<VkFence>               fences;

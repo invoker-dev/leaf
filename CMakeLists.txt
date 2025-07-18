@@ -117,6 +117,7 @@ macro(compile_shader SHADER_NAME)
 endmacro()
 
 compile_shader(triangle.vert)
+compile_shader(triangleMesh.vert)
 compile_shader(triangle.frag)
 
 add_custom_target(compile_shaders ALL

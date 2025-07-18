@@ -1,8 +1,12 @@
 #pragma once
 
 #include <VkBootstrap.h>
-#include <vk_mem_alloc.h>
+#include <glm/ext/vector_float2.hpp>
+#include <glm/mat4x4.hpp>
+#include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
+#include <vk_mem_alloc.h>
+#include <vulkan/vulkan_core.h>
 
 struct AllocatedImage {
   VkImage       image;
@@ -20,12 +24,47 @@ struct FrameData {
   VkFence         renderFence;
 };
 
+struct ImmediateData {
+  VkCommandPool   commandPool;
+  VkCommandBuffer commandBuffer;
+  VkFence         fence;
+};
+
 struct imguiContext {
   VkDescriptorPool descriptorPool;
   VkCommandPool    commandPool;
   VkCommandBuffer  commandBuffer;
 };
 
-struct ColorPushData{
+struct AllocatedBuffer {
+  VkBuffer          buffer;
+  VmaAllocation     allocation;
+  VmaAllocationInfo allocationInfo;
+};
+
+// types
+
+struct Vertex {
+  glm::vec3 position;
+  float     uv_x;
+  glm::vec3 normal;
+  float     uv_y;
   glm::vec4 color;
 };
+
+struct GPUMeshBuffers {
+  AllocatedBuffer indexBuffer;
+  AllocatedBuffer vertexbuffer;
+  VkDeviceAddress vertexBufferAddress;
+};
+
+struct VertPushData {
+  glm::mat4       worldMatrix;
+  VkDeviceAddress vertexBufferAddress;
+};
+
+struct FragPushData {
+  glm::vec4 color;
+};
+
+

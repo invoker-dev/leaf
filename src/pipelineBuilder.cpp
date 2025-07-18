@@ -64,7 +64,7 @@ VkPipeline PipelineBuilder::build() {
   pipelineInfo.pDepthStencilState  = &depthStencil;
   pipelineInfo.layout              = pipelineLayout;
   pipelineInfo.pRasterizationState = &rasterizer;
-  pipelineInfo.renderPass = VK_NULL_HANDLE;
+  pipelineInfo.renderPass          = VK_NULL_HANDLE;
 
   VkDynamicState                   state[]     = {VK_DYNAMIC_STATE_VIEWPORT,
                                                   VK_DYNAMIC_STATE_SCISSOR};

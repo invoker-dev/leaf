@@ -1,18 +1,23 @@
-#include <fmt/base.h>
-#include <glm/ext/vector_float4.hpp>
-#include <glm/gtc/type_ptr.hpp>
-#include <leafEngine.h>
-
+#include "imgui_internal.h"
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_filesystem.h>
+#include <SDL3/SDL_gpu.h>
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
 #include <VkBootstrap.h>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <fmt/base.h>
+#include <glm/ext/matrix_float4x4.hpp>
+#include <glm/ext/vector_float4.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
+#include <iterator>
+#include <leafEngine.h>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_wayland.h>
 #define VMA_IMPLEMENTATION
@@ -34,6 +39,7 @@ LeafEngine::LeafEngine() {
   initSynchronization();
   initImGUI();
   initPipeline();
+  initMesh();
 }
 LeafEngine::~LeafEngine() {
 
@@ -138,6 +144,7 @@ void LeafEngine::initVulkan() {
                  returnedDevice.error().message());
     std::exit(-1);
   }
+
   device   = returnedDevice.value();
   dispatch = device.make_table();
 
@@ -249,6 +256,18 @@ void LeafEngine::initCommands() {
     vkAssert(dispatch.allocateCommandBuffers(&cmdAllocInfo,
                                              &frames[i].commandBuffer));
   }
+  // immediate
+  vkAssert(dispatch.createCommandPool(&cmdPoolInfo, nullptr,
+                                      &immediateData.commandPool));
+
+  VkCommandBufferAllocateInfo immCmdAllocInfo = {};
+  immCmdAllocInfo.sType       = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+  immCmdAllocInfo.commandPool = immediateData.commandPool;
+  immCmdAllocInfo.commandBufferCount = 1;
+  immCmdAllocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+
+  vkAssert(dispatch.allocateCommandBuffers(&immCmdAllocInfo,
+                                           &immediateData.commandBuffer));
 }
 
 void LeafEngine::initSynchronization() {
@@ -273,6 +292,9 @@ void LeafEngine::initSynchronization() {
     vulkanDestroyer.addSemaphore(frames[i].renderSemaphore);
     vulkanDestroyer.addSemaphore(frames[i].swapchainSemaphore);
   }
+
+  vkAssert(dispatch.createFence(&fenceInfo, nullptr, &immediateData.fence));
+  vulkanDestroyer.addFence(immediateData.fence);
 }
 
 void LeafEngine::initImGUI() {
@@ -346,23 +368,29 @@ void LeafEngine::initImGUI() {
 void LeafEngine::initPipeline() {
 
   VkShaderModule vertexShader =
-      leafUtil::loadShaderModule("triangle.vert", dispatch);
+      leafUtil::loadShaderModule("triangleMesh.vert", dispatch);
   VkShaderModule fragmentShader =
       leafUtil::loadShaderModule("triangle.frag", dispatch);
 
-  // PUSH CONSTANT FOR TRI COLOR
-  VkPushConstantRange pushConstantRange = {};
-  pushConstantRange.offset              = 0;
-  pushConstantRange.size                = sizeof(ColorPushData);
-  pushConstantRange.stageFlags          = VK_SHADER_STAGE_FRAGMENT_BIT;
+  VkPushConstantRange pushConstantRanges[2];
+
+  pushConstantRanges[0].offset     = 0;
+  pushConstantRanges[0].size       = sizeof(VertPushData);
+  pushConstantRanges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+  // TODO: Fix allignment nicely
+  constexpr size_t fragOffset      = (sizeof(VertPushData) + 15) & ~15;
+  pushConstantRanges[1].offset     = fragOffset;
+  pushConstantRanges[1].size       = sizeof(FragPushData);
+  pushConstantRanges[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
   VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
   pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
   pipelineLayoutInfo.flags = 0;
   pipelineLayoutInfo.setLayoutCount         = 0;
   pipelineLayoutInfo.pSetLayouts            = nullptr;
-  pipelineLayoutInfo.pushConstantRangeCount = 1;
-  pipelineLayoutInfo.pPushConstantRanges    = &pushConstantRange;
+  pipelineLayoutInfo.pushConstantRangeCount = 2;
+  pipelineLayoutInfo.pPushConstantRanges    = pushConstantRanges;
 
   vkAssert(dispatch.createPipelineLayout(&pipelineLayoutInfo, nullptr,
                                          &pipelineLayout));
@@ -371,7 +399,8 @@ void LeafEngine::initPipeline() {
   pipelineBuilder.setLayout(pipelineLayout);
   pipelineBuilder.setShaders(vertexShader, fragmentShader);
   pipelineBuilder.setInputTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-  pipelineBuilder.setPolygonMode(VK_POLYGON_MODE_FILL);
+  // pipelineBuilder.setPolygonMode(VK_POLYGON_MODE_FILL);
+  pipelineBuilder.setPolygonMode(VK_POLYGON_MODE_LINE);
   pipelineBuilder.setCullMode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
   pipelineBuilder.disableMultiSampling();
   pipelineBuilder.disableBlending();
@@ -396,10 +425,10 @@ void LeafEngine::drawImGUI(VkCommandBuffer cmd, VkImageView targetImage) {
   // UI
   ImGui::Begin("TRIANGLE SLIDER");
   ImGui::Text("slide:");
-  ImGui::SliderFloat("RED", &triangleColor.r, 0.f, 1.f);
-  ImGui::SliderFloat("GREEN", &triangleColor.g, 0.f, 1.f);
-  ImGui::SliderFloat("BLUE", &triangleColor.b, 0.f, 1.f);
-  ImGui::ColorEdit3("COLOR", glm::value_ptr(triangleColor));
+  ImGui::SliderFloat("RED", &rectangleColor.r, 0.f, 1.f);
+  ImGui::SliderFloat("GREEN", &rectangleColor.g, 0.f, 1.f);
+  ImGui::SliderFloat("BLUE", &rectangleColor.b, 0.f, 1.f);
+  ImGui::ColorEdit3("COLOR", glm::value_ptr(rectangleColor));
   ImGui::End();
 
   ImGui::Render();
@@ -423,7 +452,6 @@ void LeafEngine::drawImGUI(VkCommandBuffer cmd, VkImageView targetImage) {
   dispatch.cmdBeginRendering(cmd, &renderInfo);
   ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
   dispatch.cmdEndRendering(cmd);
-
 }
 
 void LeafEngine::draw() {
@@ -569,10 +597,41 @@ void LeafEngine::drawGeometry(VkCommandBuffer cmd) {
   dispatch.cmdBeginRendering(cmd, &renderInfo);
   dispatch.cmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
-  ColorPushData fragColor = {triangleColor};
+  VertPushData mesh        = {};
+  mesh.worldMatrix         = glm::mat4{1.f};
+  mesh.vertexBufferAddress = rectangle.vertexBufferAddress;
 
-  dispatch.cmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT,
-                            0, sizeof(fragColor), &fragColor);
+  VkPushConstantsInfo vertPushInfo = {};
+  vertPushInfo.sType               = VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO;
+  vertPushInfo.layout              = pipelineLayout;
+  vertPushInfo.stageFlags          = VK_SHADER_STAGE_VERTEX_BIT;
+  vertPushInfo.offset              = 0;
+  vertPushInfo.size                = sizeof(VertPushData);
+  vertPushInfo.pValues             = &mesh;
+  // dispatch.cmdPushConstants2(cmd, &vertPushInfo);
+
+  dispatch.cmdPushConstants(cmd, vertPushInfo.layout, vertPushInfo.stageFlags,
+                            vertPushInfo.offset, vertPushInfo.size,
+                            vertPushInfo.pValues);
+
+  FragPushData fragColor = {rectangleColor};
+
+  constexpr size_t    fragOffset   = (sizeof(VertPushData) + 15) & ~15;
+  VkPushConstantsInfo fragPushInfo = {};
+  fragPushInfo.sType               = VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO;
+  fragPushInfo.layout              = pipelineLayout;
+  fragPushInfo.stageFlags          = VK_SHADER_STAGE_FRAGMENT_BIT;
+  fragPushInfo.offset              = fragOffset;
+  fragPushInfo.size                = sizeof(FragPushData);
+  fragPushInfo.pValues             = &fragColor;
+
+  dispatch.cmdPushConstants(cmd, fragPushInfo.layout, fragPushInfo.stageFlags,
+                            fragPushInfo.offset, fragPushInfo.size,
+                            fragPushInfo.pValues);
+  // dispatch.cmdPushConstants2(cmd, &fragPushInfo);
+
+  dispatch.cmdBindIndexBuffer(cmd, rectangle.indexBuffer.buffer, 0,
+                              VK_INDEX_TYPE_UINT32);
   VkViewport viewport = {};
   viewport.x          = 0;
   viewport.y          = 0;
@@ -589,6 +648,150 @@ void LeafEngine::drawGeometry(VkCommandBuffer cmd) {
   scissor.extent.height = drawExtent.height;
   dispatch.cmdSetScissor(cmd, 0, 1, &scissor);
 
-  dispatch.cmdDraw(cmd, 3, 1, 0, 0);
+  dispatch.cmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
   dispatch.cmdEndRendering(cmd);
+}
+
+AllocatedBuffer LeafEngine::allocateBuffer(size_t             allocSize,
+                                           VkBufferUsageFlags usage,
+                                           VmaMemoryUsage     memoryUsage) {
+
+  VkBufferCreateInfo bufferInfo = {};
+  bufferInfo.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+  bufferInfo.size               = allocSize;
+  bufferInfo.usage              = usage;
+
+  VmaAllocationCreateInfo vmaAllocInfo = {};
+  vmaAllocInfo.usage                   = memoryUsage;
+  vmaAllocInfo.flags                   = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+  AllocatedBuffer newBuffer;
+
+  vkAssert(vmaCreateBuffer(allocator, &bufferInfo, &vmaAllocInfo,
+                           &newBuffer.buffer, &newBuffer.allocation,
+                           &newBuffer.allocationInfo));
+
+  return newBuffer;
+}
+
+GPUMeshBuffers LeafEngine::uploadMesh(std::span<uint32_t> indices,
+                                      std::span<Vertex>   vertices) {
+  const size_t   vertexBufferSize = vertices.size() * sizeof(Vertex);
+  const size_t   indexBufferSize  = indices.size() * sizeof(uint32_t);
+  GPUMeshBuffers newSurface;
+
+  newSurface.vertexbuffer = allocateBuffer(
+      vertexBufferSize,
+      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+          VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+      VMA_MEMORY_USAGE_GPU_ONLY);
+
+  VkBufferDeviceAddressInfo deviceAddressInfo = {};
+  deviceAddressInfo.sType  = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+  deviceAddressInfo.buffer = newSurface.vertexbuffer.buffer;
+  newSurface.vertexBufferAddress =
+      dispatch.getBufferDeviceAddress(&deviceAddressInfo);
+
+  newSurface.indexBuffer = allocateBuffer(indexBufferSize,
+                                          VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+                                              VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                          VMA_MEMORY_USAGE_GPU_ONLY);
+
+  AllocatedBuffer staging = allocateBuffer(vertexBufferSize + indexBufferSize,
+                                           VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                           VMA_MEMORY_USAGE_CPU_ONLY);
+
+  void* data = staging.allocation->GetMappedData();
+  memcpy(data, vertices.data(), vertexBufferSize);
+  memcpy((char*)data + vertexBufferSize, indices.data(), indexBufferSize);
+
+  // immediate submit
+  vkAssert(dispatch.resetFences(1, &immediateData.fence));
+  vkAssert(dispatch.resetCommandBuffer(immediateData.commandBuffer, 0));
+
+  VkCommandBuffer cmd = immediateData.commandBuffer;
+
+  VkCommandBufferBeginInfo cmdBeginInfo = {};
+  cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+  vkAssert(dispatch.beginCommandBuffer(cmd, &cmdBeginInfo));
+
+  VkBufferCopy2 vertexCopy = {};
+  vertexCopy.sType         = VK_STRUCTURE_TYPE_BUFFER_COPY_2;
+  vertexCopy.size          = vertexBufferSize;
+
+  VkCopyBufferInfo2 vertexCopyInfo = {};
+  vertexCopyInfo.sType             = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2;
+  vertexCopyInfo.srcBuffer         = staging.buffer;
+  vertexCopyInfo.dstBuffer         = newSurface.vertexbuffer.buffer;
+  vertexCopyInfo.regionCount       = 1;
+  vertexCopyInfo.pRegions          = &vertexCopy;
+
+  dispatch.cmdCopyBuffer2(cmd, &vertexCopyInfo);
+
+  VkBufferCopy2 indexCopy = {};
+  indexCopy.sType         = VK_STRUCTURE_TYPE_BUFFER_COPY_2;
+  indexCopy.srcOffset     = vertexBufferSize;
+  indexCopy.size          = indexBufferSize;
+
+  VkCopyBufferInfo2 indexCopyInfo = {};
+  indexCopyInfo.sType             = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2;
+  indexCopyInfo.srcBuffer         = staging.buffer;
+  indexCopyInfo.dstBuffer         = newSurface.indexBuffer.buffer;
+  indexCopyInfo.regionCount       = 1;
+  indexCopyInfo.pRegions          = &indexCopy;
+
+  dispatch.cmdCopyBuffer2(cmd, &indexCopyInfo);
+
+  vkAssert(dispatch.endCommandBuffer(cmd));
+
+  VkCommandBufferSubmitInfo cmdSubmitInfo = {};
+  cmdSubmitInfo.sType         = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+  cmdSubmitInfo.commandBuffer = cmd;
+
+  VkSubmitInfo2 submit          = {};
+  submit.sType                  = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+  submit.commandBufferInfoCount = 1;
+  submit.pCommandBufferInfos    = &cmdSubmitInfo;
+
+  vkAssert(
+      dispatch.queueSubmit2(graphicsQueue, 1, &submit, immediateData.fence));
+  vkAssert(dispatch.waitForFences(1, &immediateData.fence, true, UINT64_MAX));
+
+  vmaDestroyBuffer(allocator, staging.buffer, staging.allocation);
+
+  return newSurface;
+}
+
+void LeafEngine::initMesh() {
+
+  std::array<Vertex, 4> rectVertices;
+
+  rectVertices[0].position = {0.5, -0.5, 0};
+  rectVertices[1].position = {0.5, 0.5, 0};
+  rectVertices[2].position = {-0.5, -0.5, 0};
+  rectVertices[3].position = {-0.5, 0.5, 0};
+
+  rectVertices[0].color = {0, 0, 0, 1};
+  rectVertices[1].color = {0.5, 0.5, 0.5, 1};
+  rectVertices[2].color = {1, 0, 0, 1};
+  rectVertices[3].color = {0, 1, 0, 1};
+
+  std::array<uint32_t, 6> rectIndices;
+
+  rectIndices[0] = 0;
+  rectIndices[1] = 1;
+  rectIndices[2] = 2;
+
+  rectIndices[3] = 2;
+  rectIndices[4] = 1;
+  rectIndices[5] = 3;
+
+  rectangle = uploadMesh(rectIndices, rectVertices);
+  fmt::println("indexBuffer: {}", (void*)rectangle.indexBuffer.buffer);
+  fmt::println("vertexBuffer: {}", (void*)rectangle.vertexbuffer.buffer);
+
+  vulkanDestroyer.addBuffer(rectangle.indexBuffer);
+  vulkanDestroyer.addBuffer(rectangle.vertexbuffer);
 }

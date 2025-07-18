@@ -6,6 +6,7 @@
 #include <vk_mem_alloc.h>
 
 #include <leafStructs.h>
+#include <span>
 #include <vulkan/vulkan_core.h>
 #include <vulkanDestroyer.h>
 
@@ -54,12 +55,15 @@ private:
   VkPipeline       pipeline;
   VkPipelineLayout pipelineLayout;
 
+  ImmediateData immediateData;
+
   FrameData  frames[framesInFlight];
   FrameData& getCurrentFrame() { return frames[frameNumber % framesInFlight]; }
 
   // TEMP
-  glm::vec4 triangleColor;
-  
+  glm::vec4 rectangleColor;
+  GPUMeshBuffers rectangle;
+
   void createSDLWindow();
   void initVulkan();
   void getQueues();
@@ -72,4 +76,11 @@ private:
   void drawImGUI(VkCommandBuffer cmd, VkImageView targetImage);
   void drawBackground(VkCommandBuffer cmd);
   void drawGeometry(VkCommandBuffer cmd);
+
+  AllocatedBuffer allocateBuffer(size_t allocSize, VkBufferUsageFlags usage,
+                                 VmaMemoryUsage memoryUsage);
+  GPUMeshBuffers uploadMesh(std::span<uint32_t> indices,
+                            std::span<Vertex>   vertices);
+
+  void initMesh();
 };

@@ -1,7 +1,7 @@
 #version 450
 
 layout(push_constant) uniform PushData {
-  vec4 color;
+  layout(offset = 80) vec4 color;
 } pushData;
 
 // layout (location = 0) in vec3 inColor;
