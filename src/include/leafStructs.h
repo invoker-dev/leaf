@@ -17,7 +17,6 @@ struct AllocatedImage {
 };
 
 struct FrameData {
-
   VkCommandPool   commandPool;
   VkCommandBuffer commandBuffer;
   VkSemaphore     swapchainSemaphore, renderSemaphore;
@@ -59,7 +58,7 @@ struct GPUMeshBuffers {
 };
 
 struct VertPushData {
-  glm::mat4       worldMatrix;
+  glm::mat4       model;
   VkDeviceAddress vertexBufferAddress;
 };
 
@@ -67,4 +66,7 @@ struct FragPushData {
   glm::vec4 color;
 };
 
-
+struct CameraUBO {
+  glm::mat4 view;
+  glm::mat4 projection;
+};

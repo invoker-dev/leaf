@@ -1,4 +1,4 @@
-#include "imgui_internal.h"
+#include "fastgltf/types.hpp"
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_gpu.h>
@@ -8,26 +8,28 @@
 #include <VkBootstrap.h>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <fmt/base.h>
+#include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/ext/vector_float4.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/trigonometric.hpp>
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
 #include <iterator>
 #include <leafEngine.h>
-#include <vulkan/vulkan_core.h>
-#include <vulkan/vulkan_wayland.h>
-#define VMA_IMPLEMENTATION
-#include <vector>
-#include <vk_mem_alloc.h>
-
 #include <leafInit.h>
 #include <leafStructs.h>
 #include <leafUtil.h>
 #include <pipelineBuilder.h>
+#include <vector>
+#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan_wayland.h>
+#define VMA_IMPLEMENTATION
+#include <vk_mem_alloc.h>
 
 LeafEngine::LeafEngine() {
 
@@ -37,6 +39,10 @@ LeafEngine::LeafEngine() {
   initSwapchain();
   initCommands();
   initSynchronization();
+  initCamera();
+  initDescriptorLayout();
+  initDescriptorPool();
+  initDescriptorSets();
   initImGUI();
   initPipeline();
   initMesh();
@@ -173,6 +179,8 @@ void LeafEngine::initSwapchain() {
   SDL_GetWindowSizeInPixels(window, &width, &height);
   windowExtent = {static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
 
+  swapchainImageFormat = VK_FORMAT_B8G8R8A8_SRGB;
+
   fmt::println("Window size:   [{} {}]", width, height);
 
   vkb::SwapchainBuilder swapchain_builder{physicalDevice, device, surface};
@@ -182,6 +190,7 @@ void LeafEngine::initSwapchain() {
               .format     = swapchainImageFormat,
               .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
           .set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR)
+          .set_desired_min_image_count(framesInFlight)
           .set_desired_extent(width, height)
           .add_image_usage_flags(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
           .build();
@@ -191,13 +200,15 @@ void LeafEngine::initSwapchain() {
                  returnedSwapchain.error().message());
     std::exit(-1);
   }
-  vkb::destroy_swapchain(swapchain);
+  VkFormat actualFormat = returnedSwapchain.value().image_format;
+  printf("Actual swapchain format: %d\n", (int)actualFormat);
+  printf("Variable says: %d\n", (int)swapchainImageFormat);
 
-  swapchain            = returnedSwapchain.value();
-  swapchainImageViews  = swapchain.get_image_views().value();
-  swapchainImages      = swapchain.get_images().value();
-  swapchainExtent      = swapchain.extent;
-  swapchainImageFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+  vkb::destroy_swapchain(swapchain);
+  swapchain           = returnedSwapchain.value();
+  swapchainImageViews = swapchain.get_image_views().value();
+  swapchainImages     = swapchain.get_images().value();
+  swapchainExtent     = swapchain.extent;
 
   VkExtent3D drawImageExtent = {};
   drawImageExtent.width      = windowExtent.width;
@@ -206,6 +217,7 @@ void LeafEngine::initSwapchain() {
 
   drawImage             = {};
   drawImage.imageFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+  ;
   drawImage.imageExtent = drawImageExtent;
 
   VkImageUsageFlags drawImageUsages = {};
@@ -387,8 +399,8 @@ void LeafEngine::initPipeline() {
   VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
   pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
   pipelineLayoutInfo.flags = 0;
-  pipelineLayoutInfo.setLayoutCount         = 0;
-  pipelineLayoutInfo.pSetLayouts            = nullptr;
+  pipelineLayoutInfo.setLayoutCount         = 1;
+  pipelineLayoutInfo.pSetLayouts            = &descriptorSetLayout;
   pipelineLayoutInfo.pushConstantRangeCount = 2;
   pipelineLayoutInfo.pPushConstantRanges    = pushConstantRanges;
 
@@ -399,8 +411,8 @@ void LeafEngine::initPipeline() {
   pipelineBuilder.setLayout(pipelineLayout);
   pipelineBuilder.setShaders(vertexShader, fragmentShader);
   pipelineBuilder.setInputTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-  // pipelineBuilder.setPolygonMode(VK_POLYGON_MODE_FILL);
-  pipelineBuilder.setPolygonMode(VK_POLYGON_MODE_LINE);
+  pipelineBuilder.setPolygonMode(VK_POLYGON_MODE_FILL);
+  // pipelineBuilder.setPolygonMode(VK_POLYGON_MODE_LINE);
   pipelineBuilder.setCullMode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
   pipelineBuilder.disableMultiSampling();
   pipelineBuilder.disableBlending();
@@ -428,7 +440,9 @@ void LeafEngine::drawImGUI(VkCommandBuffer cmd, VkImageView targetImage) {
   ImGui::SliderFloat("RED", &rectangleColor.r, 0.f, 1.f);
   ImGui::SliderFloat("GREEN", &rectangleColor.g, 0.f, 1.f);
   ImGui::SliderFloat("BLUE", &rectangleColor.b, 0.f, 1.f);
-  ImGui::ColorEdit3("COLOR", glm::value_ptr(rectangleColor));
+  ImGui::ColorEdit3("RECCOLOR", glm::value_ptr(rectangleColor));
+  ImGui::ColorEdit3("BGCOLOR", glm::value_ptr(backgroundColor));
+
   ImGui::End();
 
   ImGui::Render();
@@ -474,10 +488,6 @@ void LeafEngine::draw() {
 
   vkAssert(dispatch.acquireNextImage2KHR(&acquireInfo, &swapchainImageIndex));
 
-  // fmt::println("swapchainIndex: {} {}", frameNumber,
-  //              swapchainImageIndex);
-  // fmt::println("get curr frame: {}", (void*)&getCurrentFrame());
-  // render commands
   VkCommandBuffer cmd = getCurrentFrame().commandBuffer;
   vkAssert(dispatch.resetCommandBuffer(cmd, 0));
 
@@ -495,7 +505,7 @@ void LeafEngine::draw() {
   leafUtil::transitionImage(cmd, drawImage.image, VK_IMAGE_LAYOUT_GENERAL,
                             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
-  drawGeometry(cmd);
+  drawGeometry(cmd, swapchainImageIndex);
 
   leafUtil::transitionImage(cmd, drawImage.image,
                             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
@@ -564,19 +574,18 @@ void LeafEngine::draw() {
 
 void LeafEngine::drawBackground(VkCommandBuffer cmd) {
 
-  VkClearColorValue clearValue;
-
-  float flash = std::abs(std::sin(frameNumber / 120.f));
-  clearValue  = {{0.2, 0.1, flash, 1.0f}};
+  VkClearColorValue bg = {backgroundColor.r, backgroundColor.g,
+                          backgroundColor.b, backgroundColor.a};
 
   VkImageSubresourceRange clearRange =
       leafInit::imageSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
 
   dispatch.cmdClearColorImage(cmd, drawImage.image, VK_IMAGE_LAYOUT_GENERAL,
-                              &clearValue, 1, &clearRange);
+                              &bg, 1, &clearRange);
 }
 
-void LeafEngine::drawGeometry(VkCommandBuffer cmd) {
+void LeafEngine::drawGeometry(VkCommandBuffer cmd,
+                              uint32_t        swapchainImageIndex) {
   VkRenderingAttachmentInfo colorAttachment = {};
   colorAttachment.sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
   colorAttachment.imageView   = drawImage.imageView;
@@ -598,9 +607,17 @@ void LeafEngine::drawGeometry(VkCommandBuffer cmd) {
   dispatch.cmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
   VertPushData mesh        = {};
-  mesh.worldMatrix         = glm::mat4{1.f};
+  mesh.model               = glm::mat4{1.f};
   mesh.vertexBufferAddress = rectangle.vertexBufferAddress;
 
+  CameraUBO* mapped = (CameraUBO*)cameraBuffers[frameNumber % framesInFlight]
+                          .allocation->GetMappedData();
+  mapped->view       = camera.getViewMatrix();
+  mapped->projection = camera.getProjectionMatrix();
+
+  dispatch.cmdBindDescriptorSets(
+      cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
+      &descriptorSets[frameNumber % framesInFlight], 0, nullptr);
   VkPushConstantsInfo vertPushInfo = {};
   vertPushInfo.sType               = VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO;
   vertPushInfo.layout              = pipelineLayout;
@@ -608,11 +625,12 @@ void LeafEngine::drawGeometry(VkCommandBuffer cmd) {
   vertPushInfo.offset              = 0;
   vertPushInfo.size                = sizeof(VertPushData);
   vertPushInfo.pValues             = &mesh;
-  // dispatch.cmdPushConstants2(cmd, &vertPushInfo);
 
   dispatch.cmdPushConstants(cmd, vertPushInfo.layout, vertPushInfo.stageFlags,
                             vertPushInfo.offset, vertPushInfo.size,
                             vertPushInfo.pValues);
+  // dispatch.cmdPushConstants2(cmd, &vertPushInfo)
+  // does not work, Missing extension (?)
 
   FragPushData fragColor = {rectangleColor};
 
@@ -773,10 +791,10 @@ void LeafEngine::initMesh() {
   rectVertices[2].position = {-0.5, -0.5, 0};
   rectVertices[3].position = {-0.5, 0.5, 0};
 
-  rectVertices[0].color = {0, 0, 0, 1};
-  rectVertices[1].color = {0.5, 0.5, 0.5, 1};
-  rectVertices[2].color = {1, 0, 0, 1};
-  rectVertices[3].color = {0, 1, 0, 1};
+  // rectVertices[0].color = {0, 0, 0, 1};
+  // rectVertices[1].color = {0.5, 0.5, 0.5, 0};
+  // rectVertices[2].color = {1, 0, 0, 1};
+  // rectVertices[3].color = {0, 1, 0, 1};
 
   std::array<uint32_t, 6> rectIndices;
 
@@ -794,4 +812,86 @@ void LeafEngine::initMesh() {
 
   vulkanDestroyer.addBuffer(rectangle.indexBuffer);
   vulkanDestroyer.addBuffer(rectangle.vertexbuffer);
+}
+
+void LeafEngine::processEvent(SDL_Event& e) { camera.processSDLEvent(e); }
+
+void LeafEngine::update() { camera.update(); }
+
+void LeafEngine::initDescriptorPool() {
+
+  VkDescriptorPoolSize poolSizes[] = {{
+      .type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+      .descriptorCount = 1 * framesInFlight,
+  }};
+
+  VkDescriptorPoolCreateInfo poolInfo = {};
+  poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+  poolInfo.poolSizeCount = 1;
+  poolInfo.pPoolSizes    = poolSizes;
+  poolInfo.maxSets       = framesInFlight;
+
+  vkAssert(dispatch.createDescriptorPool(&poolInfo, nullptr, &descriptorPool));
+}
+void LeafEngine::initDescriptorLayout() {
+
+  VkDescriptorSetLayoutBinding bindings[] = {
+      {.binding            = 0,
+       .descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+       .descriptorCount    = 1,
+       .stageFlags         = VK_SHADER_STAGE_VERTEX_BIT,
+       .pImmutableSamplers = nullptr}};
+
+  VkDescriptorSetLayoutCreateInfo layoutInfo = {};
+  layoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+  layoutInfo.bindingCount = 1;
+  layoutInfo.pBindings    = bindings;
+
+  vkAssert(dispatch.createDescriptorSetLayout(&layoutInfo, nullptr,
+                                              &descriptorSetLayout));
+}
+
+void LeafEngine::initCamera() {
+  camera        = Camera{};
+  camera.frames = framesInFlight;
+
+  camera.aspectRatio = swapchainExtent.width / (float)swapchainExtent.height;
+  fmt::println("Asp; {}", camera.aspectRatio);
+  cameraBuffers.resize(framesInFlight);
+  for (size_t i = 0; i < framesInFlight; i++) {
+    cameraBuffers[i] =
+        allocateBuffer(sizeof(CameraUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                       VMA_MEMORY_USAGE_CPU_TO_GPU);
+  }
+}
+
+void LeafEngine::initDescriptorSets() {
+  std::vector<VkDescriptorSetLayout> layouts(framesInFlight,
+                                             descriptorSetLayout);
+  VkDescriptorSetAllocateInfo        allocInfo = {};
+  allocInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+  allocInfo.descriptorPool     = descriptorPool;
+  allocInfo.descriptorSetCount = framesInFlight;
+  allocInfo.pSetLayouts        = layouts.data();
+
+  descriptorSets.resize(framesInFlight);
+  vkAssert(dispatch.allocateDescriptorSets(&allocInfo, descriptorSets.data()));
+
+  for (size_t i = 0; i < framesInFlight; i++) {
+    VkDescriptorBufferInfo cameraBufferInfo{};
+    cameraBufferInfo.buffer = cameraBuffers[i].buffer;
+    cameraBufferInfo.offset = 0;
+    cameraBufferInfo.range  = sizeof(CameraUBO);
+
+    VkWriteDescriptorSet descriptorWrite = {};
+    descriptorWrite.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet          = descriptorSets[i];
+    descriptorWrite.dstBinding      = 0;
+    descriptorWrite.dstArrayElement = 0;
+    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorWrite.pBufferInfo     = &cameraBufferInfo;
+
+    dispatch.updateDescriptorSets(1, &descriptorWrite, 0, nullptr);
+  }
 }

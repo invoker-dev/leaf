@@ -1,10 +1,13 @@
 #pragma once
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_events.h>
 #include <VkBootstrap.h>
 #include <fmt/core.h>
 #include <glm/ext/vector_float4.hpp>
+#include <vector>
 #include <vk_mem_alloc.h>
 
+#include <camera.h>
 #include <leafStructs.h>
 #include <span>
 #include <vulkan/vulkan_core.h>
@@ -12,7 +15,7 @@
 
 constexpr bool useValidationLayers = true;
 
-constexpr int framesInFlight = 4;
+constexpr int framesInFlight = 3;
 
 class LeafEngine {
 public:
@@ -20,6 +23,8 @@ public:
   ~LeafEngine();
 
   void draw();
+  void processEvent(SDL_Event& e);
+  void update();
 
 private:
   vkb::Instance              instance;
@@ -50,6 +55,12 @@ private:
   AllocatedImage             drawImage;
   VkExtent2D                 drawExtent;
 
+  VkDescriptorPool             descriptorPool;
+  VkDescriptorSetLayout        descriptorSetLayout;
+  std::vector<VkDescriptorSet> descriptorSets{};
+
+  std::vector<AllocatedBuffer> cameraBuffers{};
+
   imguiContext imguiContext;
 
   VkPipeline       pipeline;
@@ -60,9 +71,12 @@ private:
   FrameData  frames[framesInFlight];
   FrameData& getCurrentFrame() { return frames[frameNumber % framesInFlight]; }
 
-  // TEMP
-  glm::vec4 rectangleColor;
-  GPUMeshBuffers rectangle;
+  glm::vec4       backgroundColor;
+  glm::vec4       rectangleColor;
+  GPUMeshBuffers  rectangle;
+  AllocatedBuffer cameraUniformBuffer;
+
+  Camera camera;
 
   void createSDLWindow();
   void initVulkan();
@@ -70,17 +84,21 @@ private:
   void initSwapchain();
   void initCommands();
   void initSynchronization();
+  void initDescriptorLayout();
+  void initDescriptorPool();
+  void initDescriptorSets();
   void initImGUI();
   void initPipeline();
 
   void drawImGUI(VkCommandBuffer cmd, VkImageView targetImage);
   void drawBackground(VkCommandBuffer cmd);
-  void drawGeometry(VkCommandBuffer cmd);
+  void drawGeometry(VkCommandBuffer cmd, uint32_t imgIndex);
 
   AllocatedBuffer allocateBuffer(size_t allocSize, VkBufferUsageFlags usage,
                                  VmaMemoryUsage memoryUsage);
-  GPUMeshBuffers uploadMesh(std::span<uint32_t> indices,
-                            std::span<Vertex>   vertices);
+  GPUMeshBuffers  uploadMesh(std::span<uint32_t> indices,
+                             std::span<Vertex>   vertices);
 
   void initMesh();
+  void initCamera();
 };

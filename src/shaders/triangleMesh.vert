@@ -16,20 +16,25 @@ layout(buffer_reference, std430) readonly buffer VertexBuffer {
     Vertex vertices[];
 };
 
-//push constants block
+layout(binding = 0) uniform CameraUBO {
+    mat4 view;
+    mat4 projection;
+} camera;
+
 layout(push_constant) uniform constants
 {
-    mat4 render_matrix;
+    mat4 model;
     VertexBuffer vertexBuffer;
-} PushConstants;
+} pushConstants;
 
 void main()
 {
     //load vertex data from device adress
-    Vertex v = PushConstants.vertexBuffer.vertices[gl_VertexIndex];
+    Vertex v = pushConstants.vertexBuffer.vertices[gl_VertexIndex];
 
     //output data
-    gl_Position = PushConstants.render_matrix * vec4(v.position, 1.0f);
+    gl_Position = camera.projection * camera.view * pushConstants.model *
+				vec4(v.position, 1.f);
     outColor = v.color.xyz;
     outUV.x = v.uv_x;
     outUV.y = v.uv_y;

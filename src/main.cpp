@@ -20,6 +20,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
 SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
 
   ImGui_ImplSDL3_ProcessEvent(event);
+  engine->processEvent(*event);
 
   if (event->type == SDL_EVENT_QUIT) {
     return SDL_APP_SUCCESS; /* end the program, reporting success to the OS. */
@@ -30,7 +31,9 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
 // update
 SDL_AppResult SDL_AppIterate(void* appstate) {
 
+  engine->update();
   engine->draw();
+
   return SDL_APP_CONTINUE;
 }
 
