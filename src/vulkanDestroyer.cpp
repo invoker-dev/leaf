@@ -1,12 +1,11 @@
 #include "VkBootstrapDispatch.h"
-#include "leafEngine.h"
 #include <vulkanDestroyer.h>
 
 void VulkanDestroyer::addImage(AllocatedImage image) {
   images.push_back(image);
 };
 
-void VulkanDestroyer::addBuffer(AllocatedBuffer buffer) { buffers.push_back(buffer); };
+void VulkanDestroyer::addAllocatedBuffer(AllocatedBuffer buffer) { buffers.push_back(buffer); };
 void VulkanDestroyer::addSemaphore(VkSemaphore semaphore) {
   semaphores.push_back(semaphore);
 }

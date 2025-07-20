@@ -1,4 +1,3 @@
-#include "VkBootstrapDispatch.h"
 #include "leafStructs.h"
 #include <cstdint>
 #include <glm/ext/matrix_float4x4.hpp>
@@ -13,6 +12,9 @@ struct MeshGeometry {
   std::vector<Vertex>   vertices;
   std::vector<uint32_t> indices;
   GPUMeshBuffers        meshBuffers;
+
+  VkBuffer& getIndexBuffer() { return meshBuffers.indexBuffer.buffer; }
+  VkBuffer& getVertexBuffer() { return meshBuffers.vertexBuffer.buffer; }
 };
 
 struct InstanceData {
@@ -31,13 +33,14 @@ struct System {
   uint32_t     initialCubeAmount;
   uint32_t     initialSeed = 0;
 
-  static System cubeSystem;
-
-  void  init();
-  void  destroy();
-  void  addCubes(uint32_t count);
-  void  render();
-  void* get() { return &cubeSystem; }
+  void init();
+  void destroy();
+  void addCubes(uint32_t count);
+  void render();
 };
 
+inline System& get() {
+  static System cubeSystem;
+  return cubeSystem;
+}
 } // namespace CubeSystem

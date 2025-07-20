@@ -1,3 +1,5 @@
+#include <glm/ext/quaternion_geometric.hpp>
+#include <leafStructs.h>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_keyboard.h>
@@ -16,7 +18,6 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/matrix.hpp>
 #include <glm/trigonometric.hpp>
-#include <leafStructs.h>
 void Camera::update() {
 
   glm::mat4 cameraRotation = getRotationMatrix();
@@ -85,9 +86,10 @@ glm::mat4 Camera::getViewMatrix() {
 glm::mat4 Camera::getRotationMatrix() {
   glm::quat pitchRotation = glm::angleAxis(pitch, glm::vec3{1.f, 0.f, 0.f});
   glm::quat yawRotation   = glm::angleAxis(yaw, glm::vec3{0.f, 1.f, 0.f});
-  return glm::mat4_cast(pitchRotation) * glm::mat4_cast(yawRotation);
+  return glm::mat4_cast(yawRotation) * glm::mat4_cast(pitchRotation);
+
 }
 glm::mat4 Camera::getProjectionMatrix() {
 
-  return glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 10.f);
+  return glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 100.f);
 }

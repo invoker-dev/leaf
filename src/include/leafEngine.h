@@ -16,70 +16,76 @@
 
 constexpr bool useValidationLayers = true;
 
-constexpr int framesInFlight = 3;
+constexpr uint32_t framesInFlight = 3;
+namespace LeafEngine {
 
-class LeafEngine {
-public:
-  LeafEngine();
-  ~LeafEngine();
-
-  void draw();
-  void processEvent(SDL_Event& e);
-  void update();
-
-private:
+struct VulkanCore {
   vkb::Instance              instance;
   vkb::PhysicalDevice        physicalDevice;
   vkb::Device                device;
   vkb::InstanceDispatchTable instanceDispatchTable;
   vkb::DispatchTable         dispatch;
+  VmaAllocator               allocator;
+  VkQueue                    graphicsQueue;
+  uint32_t                   graphicsQueueFamily;
+};
 
-  VkExtent2D         windowExtent;
+struct VulkanSurface {
+  VkExtent2D         extent;
   VkSurfaceKHR       surface;
   VkSurfaceFormatKHR surfaceFormat;
   SDL_Window*        window;
+};
 
-  VkQueue  graphicsQueue;
-  uint32_t graphicsQueueFamily;
+struct VulkanSwapchain {
 
-  vkb::Swapchain           swapchain;
-  VkFormat                 swapchainImageFormat;
-  std::vector<VkImage>     swapchainImages;
-  std::vector<VkImageView> swapchainImageViews;
-  VkExtent2D               swapchainExtent;
+  vkb::Swapchain           vkbSwapchain;
+  VkFormat                 imageFormat;
+  std::vector<VkImage>     images;
+  std::vector<VkImageView> imageViews;
+  VkExtent2D               extent;
+};
 
-  VmaAllocator    allocator;
-  VulkanDestroyer vulkanDestroyer;
+struct RenderData {
 
-  std::vector<VkFramebuffer> frameBuffers;
-  uint32_t                   frameNumber;
-  AllocatedImage             drawImage;
-  VkExtent2D                 drawExtent;
-
+  // std::vector<VkFramebuffer>   frameBuffers;
+  FrameData                    frames[framesInFlight];
+  uint64_t                     frameNumber;
+  AllocatedImage               drawImage;
+  VkExtent2D                   drawExtent;
   VkDescriptorPool             descriptorPool;
   VkDescriptorSetLayout        descriptorSetLayout;
-  std::vector<VkDescriptorSet> descriptorSets{};
+  std::vector<VkDescriptorSet> descriptorSets;
+  std::vector<AllocatedBuffer> cameraBuffers;
+  VkPipeline                   pipeline;
+  VkPipelineLayout             pipelineLayout;
 
-  std::vector<AllocatedBuffer> cameraBuffers{};
+  glm::vec4 backgroundColor;
+};
 
-  imguiContext imguiContext;
+struct Engine {
+  VulkanCore      core;
+  VulkanSurface   surface;
+  VulkanSwapchain swapchain;
+  RenderData      renderData;
 
-  VkPipeline       pipeline;
-  VkPipelineLayout pipelineLayout;
-
-  ImmediateData immediateData;
-
-  FrameData  frames[framesInFlight];
-  FrameData& getCurrentFrame() { return frames[frameNumber % framesInFlight]; }
-
-  glm::vec4       backgroundColor;
-  glm::vec4       rectangleColor;
-  GPUMeshBuffers  rectangle;
-  AllocatedBuffer cameraUniformBuffer;
+  VulkanDestroyer vulkanDestroyer;
 
   Camera camera;
 
-  // TODO: fix order
+  ImmediateData immediateData;
+  ImguiContext  imguiContext;
+
+  AllocatedBuffer cameraUniformBuffer;
+
+  CubeSystem::System& cubeSystem = CubeSystem::get();
+
+  void init();
+  void destroy();
+  void draw();
+  void update();
+  void processEvent(SDL_Event& e);
+
   void createSDLWindow();
   void initVulkan();
   void getQueues();
@@ -103,4 +109,15 @@ private:
                                  VmaMemoryUsage memoryUsage);
   GPUMeshBuffers  uploadMesh(std::span<uint32_t> indices,
                              std::span<Vertex>   vertices);
+
+  FrameData& getCurrentFrame() {
+    return renderData.frames[renderData.frameNumber % framesInFlight];
+  }
 };
+
+inline Engine& get() {
+  static Engine instance;
+  return instance;
+}
+
+} // namespace LeafEngine

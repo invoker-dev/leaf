@@ -8,19 +8,18 @@
 #include <fmt/core.h>
 #include <leafEngine.h>
 
-LeafEngine* engine;
-
 // init
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
 
-  engine = new LeafEngine;
+  LeafEngine::get().init();
+
   return SDL_APP_CONTINUE;
 }
 // input
 SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
 
   ImGui_ImplSDL3_ProcessEvent(event);
-  engine->processEvent(*event);
+  LeafEngine::get().processEvent(*event);
 
   if (event->type == SDL_EVENT_QUIT) {
     return SDL_APP_SUCCESS; /* end the program, reporting success to the OS. */
@@ -31,11 +30,13 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
 // update
 SDL_AppResult SDL_AppIterate(void* appstate) {
 
-  engine->update();
-  engine->draw();
+  LeafEngine::get().update();
+  LeafEngine::get().draw();
 
   return SDL_APP_CONTINUE;
 }
 
 // cleanup
-void SDL_AppQuit(void* appstate, SDL_AppResult result) { delete (engine); }
+void SDL_AppQuit(void* appstate, SDL_AppResult result) {
+  LeafEngine::get().destroy();
+}

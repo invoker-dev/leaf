@@ -30,7 +30,14 @@
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
 
-LeafEngine::LeafEngine() {
+namespace LeafEngine {
+
+void Engine::init() {
+
+  core       = {};
+  swapchain  = {};
+  surface    = {};
+  renderData = {};
 
   createSDLWindow();
   initVulkan();
@@ -38,51 +45,57 @@ LeafEngine::LeafEngine() {
   initSwapchain();
   initCommands();
   initSynchronization();
-  initCamera();
   initDescriptorLayout();
   initDescriptorPool();
+
+  initCamera();
   initDescriptorSets();
   initImGUI();
   initPipeline();
-  initMesh();
-  initCubes();
-}
-LeafEngine::~LeafEngine() {
 
-  vkAssert(dispatch.deviceWaitIdle());
+  initCubes();
+  initMesh();
+};
+void Engine::destroy() {
+
+  vkAssert(core.dispatch.deviceWaitIdle());
 
   // destroys primitives (images, buffers, fences etc)
-  vulkanDestroyer.flush(dispatch, allocator);
 
-  vmaDestroyAllocator(allocator);
   ImGui_ImplVulkan_Shutdown();
-  vkb::destroy_swapchain(swapchain);
-  vkb::destroy_device(device);
-  vkb::destroy_surface(instance, surface);
-  vkb::destroy_instance(instance);
-  SDL_DestroyWindow(window);
+  ImGui_ImplSDL3_Shutdown();
+  ImGui::DestroyContext();
+
+  vulkanDestroyer.flush(core.dispatch, core.allocator);
+
+  vmaDestroyAllocator(core.allocator);
+  vkb::destroy_swapchain(swapchain.vkbSwapchain);
+  vkb::destroy_device(core.device);
+  vkb::destroy_surface(core.instance, surface.surface);
+  vkb::destroy_instance(core.instance);
+  SDL_DestroyWindow(surface.window);
   SDL_Quit();
 }
 
-void LeafEngine::createSDLWindow() {
+void Engine::createSDLWindow() {
 
   SDL_WindowFlags sdlFlags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN);
 
-  window = SDL_CreateWindow("LeafEngine", 2000, 1500, sdlFlags);
-  if (!window) {
+  surface.window = SDL_CreateWindow("LeafEngine", 2000, 1500, sdlFlags);
+  if (!surface.window) {
     fmt::print("failed to init SDL window: {}\n", SDL_GetError());
     std::exit(-1);
   }
 
-  if (!SDL_ShowWindow(window)) {
+  if (!SDL_ShowWindow(surface.window)) {
     fmt::print("failed to show SDL window: {}\n", SDL_GetError());
     std::exit(-1);
   }
 
-  SDL_SetWindowRelativeMouseMode(window, true);
+  SDL_SetWindowRelativeMouseMode(surface.window, true);
 }
 
-void LeafEngine::initVulkan() {
+void Engine::initVulkan() {
 
   unsigned int count = 0;
   SDL_Vulkan_GetInstanceExtensions(&count);
@@ -110,11 +123,11 @@ void LeafEngine::initVulkan() {
     std::exit(-1);
   }
 
-  instance = returnedInstance.value();
+  core.instance = returnedInstance.value();
 
-  instanceDispatchTable = instance.make_table();
-  bool result =
-      SDL_Vulkan_CreateSurface(window, instance.instance, nullptr, &surface);
+  core.instanceDispatchTable = core.instance.make_table();
+  bool result = SDL_Vulkan_CreateSurface(surface.window, core.instance.instance,
+                                         nullptr, &surface.surface);
   if (!result) {
     fmt::println("failed to create SDL surface: {}", SDL_GetError());
   }
@@ -129,11 +142,11 @@ void LeafEngine::initVulkan() {
   features12.bufferDeviceAddress = true;
   features12.descriptorIndexing  = true;
 
-  vkb::PhysicalDeviceSelector selector{instance};
+  vkb::PhysicalDeviceSelector selector{core.instance};
   auto returnedPhysicalDevice = selector.set_minimum_version(1, 3)
                                     .set_required_features_13(features13)
                                     .set_required_features_12(features12)
-                                    .set_surface(surface)
+                                    .set_surface(surface.surface)
                                     .select();
 
   if (!returnedPhysicalDevice) {
@@ -142,9 +155,9 @@ void LeafEngine::initVulkan() {
     std::exit(-1);
   }
 
-  physicalDevice = returnedPhysicalDevice.value();
+  core.physicalDevice = returnedPhysicalDevice.value();
 
-  vkb::DeviceBuilder deviceBuilder{physicalDevice};
+  vkb::DeviceBuilder deviceBuilder{core.physicalDevice};
   auto               returnedDevice = deviceBuilder.build();
 
   if (!returnedDevice) {
@@ -153,43 +166,46 @@ void LeafEngine::initVulkan() {
     std::exit(-1);
   }
 
-  device   = returnedDevice.value();
-  dispatch = device.make_table();
+  core.device   = returnedDevice.value();
+  core.dispatch = core.device.make_table();
 
   VmaAllocatorCreateInfo allocatorInfo = {};
-  allocatorInfo.physicalDevice         = physicalDevice;
-  allocatorInfo.device                 = device;
-  allocatorInfo.instance               = instance;
+  allocatorInfo.physicalDevice         = core.physicalDevice;
+  allocatorInfo.device                 = core.device;
+  allocatorInfo.instance               = core.instance;
   allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
-  vmaCreateAllocator(&allocatorInfo, &allocator);
+  vmaCreateAllocator(&allocatorInfo, &core.allocator);
 }
 
-void LeafEngine::getQueues() {
-  auto gq = device.get_queue(vkb::QueueType::graphics);
+void Engine::getQueues() {
+  auto gq = core.device.get_queue(vkb::QueueType::graphics);
   if (!gq.has_value()) {
     fmt::println("failed to get graphics queue: {}", gq.error().message());
     std::exit(-1);
   }
-  graphicsQueue = gq.value();
-  graphicsQueueFamily =
-      device.get_queue_index(vkb::QueueType::graphics).value();
+  core.graphicsQueue = gq.value();
+  core.graphicsQueueFamily =
+      core.device.get_queue_index(vkb::QueueType::graphics).value();
 }
 
-void LeafEngine::initSwapchain() {
+void Engine::initSwapchain() {
 
   int width, height;
-  SDL_GetWindowSizeInPixels(window, &width, &height);
-  windowExtent = {static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
+  SDL_GetWindowSizeInPixels(surface.window, &width, &height);
+  surface.extent = {static_cast<uint32_t>(width),
+                    static_cast<uint32_t>(height)};
 
-  swapchainImageFormat = VK_FORMAT_B8G8R8A8_SRGB;
+  swapchain.imageFormat = VK_FORMAT_B8G8R8A8_SRGB;
 
   fmt::println("Window size:   [{} {}]", width, height);
 
-  vkb::SwapchainBuilder swapchain_builder{physicalDevice, device, surface};
-  auto                  returnedSwapchain =
-      swapchain_builder.set_desired_format(surfaceFormat)
+  vkb::SwapchainBuilder swapchainBuilder{core.physicalDevice, core.device,
+                                         surface.surface};
+
+  auto returnedSwapchain =
+      swapchainBuilder.set_desired_format(surface.surfaceFormat)
           .set_desired_format(VkSurfaceFormatKHR{
-              .format     = swapchainImageFormat,
+              .format     = swapchain.imageFormat,
               .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
           .set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR)
           .set_desired_min_image_count(framesInFlight)
@@ -202,25 +218,21 @@ void LeafEngine::initSwapchain() {
                  returnedSwapchain.error().message());
     std::exit(-1);
   }
-  VkFormat actualFormat = returnedSwapchain.value().image_format;
-  printf("Actual swapchain format: %d\n", (int)actualFormat);
-  printf("Variable says: %d\n", (int)swapchainImageFormat);
 
-  vkb::destroy_swapchain(swapchain);
-  swapchain           = returnedSwapchain.value();
-  swapchainImageViews = swapchain.get_image_views().value();
-  swapchainImages     = swapchain.get_images().value();
-  swapchainExtent     = swapchain.extent;
+  vkb::destroy_swapchain(swapchain.vkbSwapchain);
+  swapchain.vkbSwapchain = returnedSwapchain.value();
+  swapchain.imageViews   = swapchain.vkbSwapchain.get_image_views().value();
+  swapchain.images       = swapchain.vkbSwapchain.get_images().value();
+  swapchain.extent       = swapchain.vkbSwapchain.extent;
 
   VkExtent3D drawImageExtent = {};
-  drawImageExtent.width      = windowExtent.width;
-  drawImageExtent.height     = windowExtent.height;
+  drawImageExtent.width      = surface.extent.width;
+  drawImageExtent.height     = surface.extent.height;
   drawImageExtent.depth      = 1;
 
-  drawImage             = {};
-  drawImage.imageFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
-  ;
-  drawImage.imageExtent = drawImageExtent;
+  renderData.drawImage             = {};
+  renderData.drawImage.imageFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+  renderData.drawImage.imageExtent = drawImageExtent;
 
   VkImageUsageFlags drawImageUsages = {};
   drawImageUsages |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
@@ -229,50 +241,52 @@ void LeafEngine::initSwapchain() {
   drawImageUsages |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
   VkImageCreateInfo renderImageCreateInfo = leafInit::imageCreateInfo(
-      drawImage.imageFormat, drawImageUsages, drawImageExtent);
+      renderData.drawImage.imageFormat, drawImageUsages, drawImageExtent);
 
   VmaAllocationCreateInfo renderImageAllocationInfo = {};
   renderImageAllocationInfo.usage                   = VMA_MEMORY_USAGE_GPU_ONLY;
   renderImageAllocationInfo.requiredFlags =
       VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-  vmaCreateImage(allocator, &renderImageCreateInfo, &renderImageAllocationInfo,
-                 &drawImage.image, &drawImage.allocation, nullptr);
+  vmaCreateImage(core.allocator, &renderImageCreateInfo,
+                 &renderImageAllocationInfo, &renderData.drawImage.image,
+                 &renderData.drawImage.allocation, nullptr);
 
   VkImageViewCreateInfo renderImageViewCreateInfo =
-      leafInit::imageViewCreateInfo(drawImage.imageFormat, drawImage.image,
+      leafInit::imageViewCreateInfo(renderData.drawImage.imageFormat,
+                                    renderData.drawImage.image,
                                     VK_IMAGE_ASPECT_COLOR_BIT);
 
-  vkAssert(dispatch.createImageView(&renderImageViewCreateInfo, nullptr,
-                                    &drawImage.imageView));
+  vkAssert(core.dispatch.createImageView(&renderImageViewCreateInfo, nullptr,
+                                         &renderData.drawImage.imageView));
 }
 
-void LeafEngine::initCommands() {
+void Engine::initCommands() {
 
   VkCommandPoolCreateInfo cmdPoolInfo = {};
   cmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
   cmdPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-  cmdPoolInfo.queueFamilyIndex = graphicsQueueFamily;
+  cmdPoolInfo.queueFamilyIndex = core.graphicsQueueFamily;
 
   for (size_t i = 0; i < framesInFlight; i++) {
 
-    vkAssert(dispatch.createCommandPool(&cmdPoolInfo, nullptr,
-                                        &frames[i].commandPool));
+    vkAssert(core.dispatch.createCommandPool(
+        &cmdPoolInfo, nullptr, &renderData.frames[i].commandPool));
 
-    vulkanDestroyer.addCommandPool(frames[i].commandPool);
+    vulkanDestroyer.addCommandPool(renderData.frames[i].commandPool);
 
     VkCommandBufferAllocateInfo cmdAllocInfo = {};
     cmdAllocInfo.sType       = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    cmdAllocInfo.commandPool = frames[i].commandPool;
+    cmdAllocInfo.commandPool = renderData.frames[i].commandPool;
     cmdAllocInfo.commandBufferCount = 1;
     cmdAllocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 
-    vkAssert(dispatch.allocateCommandBuffers(&cmdAllocInfo,
-                                             &frames[i].commandBuffer));
+    vkAssert(core.dispatch.allocateCommandBuffers(
+        &cmdAllocInfo, &renderData.frames[i].commandBuffer));
   }
   // immediate
-  vkAssert(dispatch.createCommandPool(&cmdPoolInfo, nullptr,
-                                      &immediateData.commandPool));
+  vkAssert(core.dispatch.createCommandPool(&cmdPoolInfo, nullptr,
+                                           &immediateData.commandPool));
 
   VkCommandBufferAllocateInfo immCmdAllocInfo = {};
   immCmdAllocInfo.sType       = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -280,11 +294,11 @@ void LeafEngine::initCommands() {
   immCmdAllocInfo.commandBufferCount = 1;
   immCmdAllocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 
-  vkAssert(dispatch.allocateCommandBuffers(&immCmdAllocInfo,
-                                           &immediateData.commandBuffer));
+  vkAssert(core.dispatch.allocateCommandBuffers(&immCmdAllocInfo,
+                                                &immediateData.commandBuffer));
 }
 
-void LeafEngine::initSynchronization() {
+void Engine::initSynchronization() {
 
   VkFenceCreateInfo fenceInfo = {};
   fenceInfo.sType             = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
@@ -295,23 +309,25 @@ void LeafEngine::initSynchronization() {
   semaphoreInfo.flags                 = 0;
 
   for (size_t i = 0; i < framesInFlight; i++) {
-    vkAssert(dispatch.createFence(&fenceInfo, nullptr, &frames[i].renderFence));
+    vkAssert(core.dispatch.createFence(&fenceInfo, nullptr,
+                                       &renderData.frames[i].renderFence));
 
-    vkAssert(dispatch.createSemaphore(&semaphoreInfo, nullptr,
-                                      &frames[i].renderSemaphore));
-    vkAssert(dispatch.createSemaphore(&semaphoreInfo, nullptr,
-                                      &frames[i].swapchainSemaphore));
+    vkAssert(core.dispatch.createSemaphore(
+        &semaphoreInfo, nullptr, &renderData.frames[i].renderSemaphore));
+    vkAssert(core.dispatch.createSemaphore(
+        &semaphoreInfo, nullptr, &renderData.frames[i].swapchainSemaphore));
 
-    vulkanDestroyer.addFence(frames[i].renderFence);
-    vulkanDestroyer.addSemaphore(frames[i].renderSemaphore);
-    vulkanDestroyer.addSemaphore(frames[i].swapchainSemaphore);
+    vulkanDestroyer.addFence(renderData.frames[i].renderFence);
+    vulkanDestroyer.addSemaphore(renderData.frames[i].renderSemaphore);
+    vulkanDestroyer.addSemaphore(renderData.frames[i].swapchainSemaphore);
   }
 
-  vkAssert(dispatch.createFence(&fenceInfo, nullptr, &immediateData.fence));
+  vkAssert(
+      core.dispatch.createFence(&fenceInfo, nullptr, &immediateData.fence));
   vulkanDestroyer.addFence(immediateData.fence);
 }
 
-void LeafEngine::initImGUI() {
+void Engine::initImGUI() {
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
   ImGuiIO& io = ImGui::GetIO();
@@ -342,17 +358,17 @@ void LeafEngine::initImGUI() {
   poolInfo.poolSizeCount = (uint32_t)std::size(pool_sizes);
   poolInfo.pPoolSizes    = pool_sizes;
 
-  vkAssert(dispatch.createDescriptorPool(&poolInfo, nullptr,
-                                         &imguiContext.descriptorPool));
+  vkAssert(core.dispatch.createDescriptorPool(&poolInfo, nullptr,
+                                              &imguiContext.descriptorPool));
 
   VkPipelineCreateInfoKHR pipelineInfo = {};
 
   ImGui_ImplVulkan_InitInfo initInfo{};
-  initInfo.Instance                    = instance;
-  initInfo.PhysicalDevice              = physicalDevice;
-  initInfo.Device                      = device;
-  initInfo.QueueFamily                 = graphicsQueueFamily;
-  initInfo.Queue                       = graphicsQueue;
+  initInfo.Instance                    = core.instance;
+  initInfo.PhysicalDevice              = core.physicalDevice;
+  initInfo.Device                      = core.device;
+  initInfo.QueueFamily                 = core.graphicsQueueFamily;
+  initInfo.Queue                       = core.graphicsQueue;
   initInfo.PipelineCache               = VK_NULL_HANDLE;
   initInfo.DescriptorPool              = imguiContext.descriptorPool;
   initInfo.Subpass                     = 0;
@@ -364,12 +380,12 @@ void LeafEngine::initImGUI() {
       VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
   initInfo.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
   initInfo.PipelineRenderingCreateInfo.pColorAttachmentFormats =
-      &swapchainImageFormat;
+      &swapchain.imageFormat;
   initInfo.MSAASamples     = VK_SAMPLE_COUNT_1_BIT;
   initInfo.Allocator       = nullptr;
   initInfo.CheckVkResultFn = vkAssert;
 
-  if (!ImGui_ImplSDL3_InitForVulkan(window)) {
+  if (!ImGui_ImplSDL3_InitForVulkan(surface.window)) {
     fmt::println("ImGui_ImplSDL3_InitForVulkan failed");
   }
   if (!ImGui_ImplVulkan_Init(&initInfo)) {
@@ -379,12 +395,12 @@ void LeafEngine::initImGUI() {
   vulkanDestroyer.addDescriptorPool(imguiContext.descriptorPool);
 }
 
-void LeafEngine::initPipeline() {
+void Engine::initPipeline() {
 
   VkShaderModule vertexShader =
-      leafUtil::loadShaderModule("triangleMesh.vert", dispatch);
+      leafUtil::loadShaderModule("triangleMesh.vert", core.dispatch);
   VkShaderModule fragmentShader =
-      leafUtil::loadShaderModule("triangle.frag", dispatch);
+      leafUtil::loadShaderModule("triangle.frag", core.dispatch);
 
   VkPushConstantRange pushConstantRanges[2];
 
@@ -402,35 +418,35 @@ void LeafEngine::initPipeline() {
   pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
   pipelineLayoutInfo.flags = 0;
   pipelineLayoutInfo.setLayoutCount         = 1;
-  pipelineLayoutInfo.pSetLayouts            = &descriptorSetLayout;
+  pipelineLayoutInfo.pSetLayouts            = &renderData.descriptorSetLayout;
   pipelineLayoutInfo.pushConstantRangeCount = 2;
   pipelineLayoutInfo.pPushConstantRanges    = pushConstantRanges;
 
-  vkAssert(dispatch.createPipelineLayout(&pipelineLayoutInfo, nullptr,
-                                         &pipelineLayout));
+  vkAssert(core.dispatch.createPipelineLayout(&pipelineLayoutInfo, nullptr,
+                                              &renderData.pipelineLayout));
 
-  PipelineBuilder pipelineBuilder = PipelineBuilder(dispatch);
-  pipelineBuilder.setLayout(pipelineLayout);
+  PipelineBuilder pipelineBuilder = PipelineBuilder(core.dispatch);
+  pipelineBuilder.setLayout(renderData.pipelineLayout);
   pipelineBuilder.setShaders(vertexShader, fragmentShader);
   pipelineBuilder.setInputTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
   pipelineBuilder.setPolygonMode(VK_POLYGON_MODE_FILL);
   // pipelineBuilder.setPolygonMode(VK_POLYGON_MODE_LINE);
-  pipelineBuilder.setCullMode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+  pipelineBuilder.setCullMode(VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_CLOCKWISE);
   pipelineBuilder.disableMultiSampling();
   pipelineBuilder.disableBlending();
   pipelineBuilder.disableDepthTest();
-  pipelineBuilder.setColorAttachmentFormat(drawImage.imageFormat);
+  pipelineBuilder.setColorAttachmentFormat(renderData.drawImage.imageFormat);
 
-  pipeline = pipelineBuilder.build();
+  renderData.pipeline = pipelineBuilder.build();
 
-  dispatch.destroyShaderModule(vertexShader, nullptr);
-  dispatch.destroyShaderModule(fragmentShader, nullptr);
+  core.dispatch.destroyShaderModule(vertexShader, nullptr);
+  core.dispatch.destroyShaderModule(fragmentShader, nullptr);
 
-  vulkanDestroyer.addPipeline(pipeline);
-  vulkanDestroyer.addPipelineLayout(pipelineLayout);
+  vulkanDestroyer.addPipeline(renderData.pipeline);
+  vulkanDestroyer.addPipelineLayout(renderData.pipelineLayout);
 }
 
-void LeafEngine::drawImGUI(VkCommandBuffer cmd, VkImageView targetImage) {
+void Engine::drawImGUI(VkCommandBuffer cmd, VkImageView targetImage) {
 
   ImGui_ImplVulkan_NewFrame();
   ImGui_ImplSDL3_NewFrame();
@@ -439,8 +455,8 @@ void LeafEngine::drawImGUI(VkCommandBuffer cmd, VkImageView targetImage) {
   // UI
   ImGui::Begin("TRIANGLE SLIDER");
   ImGui::Text("slide:");
-  ImGui::ColorEdit3("RECCOLOR", glm::value_ptr(rectangleColor));
-  ImGui::ColorEdit3("BGCOLOR", glm::value_ptr(backgroundColor));
+  // ImGui::ColorEdit3("RECCOLOR", glm::value_ptr(rectangleColor));
+  ImGui::ColorEdit3("BGCOLOR", glm::value_ptr(renderData.backgroundColor));
 
   ImGui::End();
   ImGui::Render();
@@ -452,81 +468,83 @@ void LeafEngine::drawImGUI(VkCommandBuffer cmd, VkImageView targetImage) {
   colorAttachment.loadOp      = VK_ATTACHMENT_LOAD_OP_LOAD;
   colorAttachment.storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
 
-  VkRenderingInfo renderInfo      = {};
-  renderInfo.sType                = VK_STRUCTURE_TYPE_RENDERING_INFO;
-  renderInfo.renderArea           = VkRect2D{VkOffset2D{0, 0}, swapchainExtent};
-  renderInfo.layerCount           = 1;
+  VkRenderingInfo renderInfo = {};
+  renderInfo.sType           = VK_STRUCTURE_TYPE_RENDERING_INFO;
+  renderInfo.renderArea      = VkRect2D{VkOffset2D{0, 0}, swapchain.extent};
+  renderInfo.layerCount      = 1;
   renderInfo.colorAttachmentCount = 1;
   renderInfo.pColorAttachments    = &colorAttachment;
   renderInfo.pDepthAttachment     = nullptr;
   renderInfo.pStencilAttachment   = nullptr;
 
-  dispatch.cmdBeginRendering(cmd, &renderInfo);
+  core.dispatch.cmdBeginRendering(cmd, &renderInfo);
   ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
-  dispatch.cmdEndRendering(cmd);
+  core.dispatch.cmdEndRendering(cmd);
 }
 
-void LeafEngine::draw() {
+void Engine::draw() {
   // wait for GPU to finish work
-  vkAssert(dispatch.waitForFences(1, &getCurrentFrame().renderFence, true,
-                                  1'000'000'000));
-  vkAssert(dispatch.resetFences(1, &getCurrentFrame().renderFence));
+  vkAssert(core.dispatch.waitForFences(1, &getCurrentFrame().renderFence, true,
+                                       1'000'000'000));
+  vkAssert(core.dispatch.resetFences(1, &getCurrentFrame().renderFence));
 
-  drawExtent.width  = swapchainExtent.width;
-  drawExtent.height = swapchainExtent.height;
+  renderData.drawExtent.width  = swapchain.extent.width;
+  renderData.drawExtent.height = swapchain.extent.height;
 
   uint32_t                  swapchainImageIndex;
   VkAcquireNextImageInfoKHR acquireInfo = {};
   acquireInfo.sType      = VK_STRUCTURE_TYPE_ACQUIRE_NEXT_IMAGE_INFO_KHR;
-  acquireInfo.swapchain  = swapchain;
+  acquireInfo.swapchain  = swapchain.vkbSwapchain;
   acquireInfo.timeout    = 1'000'000'000; // 1 second
   acquireInfo.semaphore  = getCurrentFrame().swapchainSemaphore;
   acquireInfo.fence      = nullptr;
   acquireInfo.deviceMask = 0x1;
 
-  vkAssert(dispatch.acquireNextImage2KHR(&acquireInfo, &swapchainImageIndex));
+  vkAssert(
+      core.dispatch.acquireNextImage2KHR(&acquireInfo, &swapchainImageIndex));
 
   VkCommandBuffer cmd = getCurrentFrame().commandBuffer;
-  vkAssert(dispatch.resetCommandBuffer(cmd, 0));
+  vkAssert(core.dispatch.resetCommandBuffer(cmd, 0));
 
   VkCommandBufferBeginInfo cmdBeginInfo = {};
   cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
   cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-  vkAssert(dispatch.beginCommandBuffer(cmd, &cmdBeginInfo));
+  vkAssert(core.dispatch.beginCommandBuffer(cmd, &cmdBeginInfo));
 
-  leafUtil::transitionImage(cmd, drawImage.image, VK_IMAGE_LAYOUT_UNDEFINED,
-                            VK_IMAGE_LAYOUT_GENERAL);
+  leafUtil::transitionImage(cmd, renderData.drawImage.image,
+                            VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
   drawBackground(cmd);
 
-  leafUtil::transitionImage(cmd, drawImage.image, VK_IMAGE_LAYOUT_GENERAL,
+  leafUtil::transitionImage(cmd, renderData.drawImage.image,
+                            VK_IMAGE_LAYOUT_GENERAL,
                             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
   drawGeometry(cmd, swapchainImageIndex);
 
-  leafUtil::transitionImage(cmd, drawImage.image,
+  leafUtil::transitionImage(cmd, renderData.drawImage.image,
                             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 
-  leafUtil::transitionImage(cmd, swapchainImages[swapchainImageIndex],
+  leafUtil::transitionImage(cmd, swapchain.images[swapchainImageIndex],
                             VK_IMAGE_LAYOUT_UNDEFINED,
                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
-  leafUtil::copyImageToImage(cmd, drawImage.image,
-                             swapchainImages[swapchainImageIndex], drawExtent,
-                             swapchainExtent);
+  leafUtil::copyImageToImage(cmd, renderData.drawImage.image,
+                             swapchain.images[swapchainImageIndex],
+                             renderData.drawExtent, swapchain.extent);
 
-  leafUtil::transitionImage(cmd, swapchainImages[swapchainImageIndex],
+  leafUtil::transitionImage(cmd, swapchain.images[swapchainImageIndex],
                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
-  drawImGUI(cmd, swapchainImageViews[swapchainImageIndex]);
-  leafUtil::transitionImage(cmd, swapchainImages[swapchainImageIndex],
+  drawImGUI(cmd, swapchain.imageViews[swapchainImageIndex]);
+  leafUtil::transitionImage(cmd, swapchain.images[swapchainImageIndex],
                             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                             VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
-  vkAssert(dispatch.endCommandBuffer(cmd));
+  vkAssert(core.dispatch.endCommandBuffer(cmd));
 
   // command is ready for submission
   VkCommandBufferSubmitInfo submitInfo = {};
@@ -554,126 +572,132 @@ void LeafEngine::draw() {
   submit.signalSemaphoreInfoCount = 1;
   submit.pSignalSemaphoreInfos    = &signalInfo;
 
-  vkAssert(dispatch.queueSubmit2(graphicsQueue, 1, &submit,
-                                 getCurrentFrame().renderFence));
+  vkAssert(core.dispatch.queueSubmit2(core.graphicsQueue, 1, &submit,
+                                      getCurrentFrame().renderFence));
 
   // prepare present
   VkPresentInfoKHR presentInfo   = {};
   presentInfo.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-  presentInfo.pSwapchains        = &swapchain.swapchain;
+  presentInfo.pSwapchains        = &swapchain.vkbSwapchain.swapchain;
   presentInfo.swapchainCount     = 1;
   presentInfo.pWaitSemaphores    = &getCurrentFrame().renderSemaphore;
   presentInfo.waitSemaphoreCount = 1;
   presentInfo.pImageIndices      = &swapchainImageIndex;
-  vkAssert(dispatch.queuePresentKHR(graphicsQueue, &presentInfo));
+  vkAssert(core.dispatch.queuePresentKHR(core.graphicsQueue, &presentInfo));
 
-  frameNumber++;
+  renderData.frameNumber++;
 }
 
-void LeafEngine::drawBackground(VkCommandBuffer cmd) {
+void Engine::drawBackground(VkCommandBuffer cmd) {
 
-  VkClearColorValue bg = {backgroundColor.r, backgroundColor.g,
-                          backgroundColor.b, backgroundColor.a};
+  VkClearColorValue bg = {
+      renderData.backgroundColor.r, renderData.backgroundColor.g,
+      renderData.backgroundColor.b, renderData.backgroundColor.a};
 
   VkImageSubresourceRange clearRange =
       leafInit::imageSubresourceRange(VK_IMAGE_ASPECT_COLOR_BIT);
 
-  dispatch.cmdClearColorImage(cmd, drawImage.image, VK_IMAGE_LAYOUT_GENERAL,
-                              &bg, 1, &clearRange);
+  core.dispatch.cmdClearColorImage(cmd, renderData.drawImage.image,
+                                   VK_IMAGE_LAYOUT_GENERAL, &bg, 1,
+                                   &clearRange);
 }
 
-void LeafEngine::drawGeometry(VkCommandBuffer cmd,
-                              uint32_t        swapchainImageIndex) {
+void Engine::drawGeometry(VkCommandBuffer cmd, uint32_t swapchainImageIndex) {
   VkRenderingAttachmentInfo colorAttachment = {};
   colorAttachment.sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-  colorAttachment.imageView   = drawImage.imageView;
+  colorAttachment.imageView   = renderData.drawImage.imageView;
   colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
   colorAttachment.loadOp      = VK_ATTACHMENT_LOAD_OP_LOAD;
   colorAttachment.storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
   colorAttachment.clearValue  = {};
 
-  VkRenderingInfo renderInfo      = {};
-  renderInfo.sType                = VK_STRUCTURE_TYPE_RENDERING_INFO;
-  renderInfo.renderArea           = VkRect2D{VkOffset2D{0, 0}, drawExtent};
-  renderInfo.layerCount           = 1;
+  VkRenderingInfo renderInfo = {};
+  renderInfo.sType           = VK_STRUCTURE_TYPE_RENDERING_INFO;
+  renderInfo.renderArea = VkRect2D{VkOffset2D{0, 0}, renderData.drawExtent};
+  renderInfo.layerCount = 1;
   renderInfo.colorAttachmentCount = 1;
   renderInfo.pColorAttachments    = &colorAttachment;
   renderInfo.pDepthAttachment     = nullptr;
   renderInfo.pStencilAttachment   = nullptr;
 
-  dispatch.cmdBeginRendering(cmd, &renderInfo);
-  dispatch.cmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+  core.dispatch.cmdBeginRendering(cmd, &renderInfo);
+  core.dispatch.cmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                renderData.pipeline);
 
-  CameraUBO* mapped = (CameraUBO*)cameraBuffers[frameNumber % framesInFlight]
-                          .allocation->GetMappedData();
+  CameraUBO* mapped =
+      (CameraUBO*)renderData
+          .cameraBuffers[renderData.frameNumber % framesInFlight]
+          .allocation->GetMappedData();
   mapped->view       = camera.getViewMatrix();
   mapped->projection = camera.getProjectionMatrix();
 
-  dispatch.cmdBindDescriptorSets(
-      cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
-      &descriptorSets[frameNumber % framesInFlight], 0, nullptr);
+  core.dispatch.cmdBindDescriptorSets(
+      cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, renderData.pipelineLayout, 0, 1,
+      &renderData.descriptorSets[renderData.frameNumber % framesInFlight], 0,
+      nullptr);
 
-  dispatch.cmdBindIndexBuffer(cmd, rectangle.indexBuffer.buffer, 0,
-                              VK_INDEX_TYPE_UINT32);
+  core.dispatch.cmdBindIndexBuffer(cmd, cubeSystem.mesh.getIndexBuffer(), 0,
+                                   VK_INDEX_TYPE_UINT32);
 
   VkViewport viewport = {};
   viewport.x          = 0;
   viewport.y          = 0;
-  viewport.width      = drawExtent.width;
-  viewport.height     = drawExtent.height;
+  viewport.width      = renderData.drawExtent.width;
+  viewport.height     = renderData.drawExtent.height;
   viewport.minDepth   = 0.f;
   viewport.maxDepth   = 1.f;
-  dispatch.cmdSetViewport(cmd, 0, 1, &viewport);
+  core.dispatch.cmdSetViewport(cmd, 0, 1, &viewport);
 
   VkRect2D scissor      = {};
   scissor.offset.x      = 0;
   scissor.offset.y      = 0;
-  scissor.extent.width  = drawExtent.width;
-  scissor.extent.height = drawExtent.height;
-  dispatch.cmdSetScissor(cmd, 0, 1, &scissor);
+  scissor.extent.width  = renderData.drawExtent.width;
+  scissor.extent.height = renderData.drawExtent.height;
+  core.dispatch.cmdSetScissor(cmd, 0, 1, &scissor);
 
   // per cube
   for (size_t i = 0; i < cubeSystem.data.count; i++) {
 
-    VertPushData mesh = {};
-    mesh.model        = cubeSystem.data.modelMatrices[i];
+    VertPushData mesh        = {};
+    mesh.model               = cubeSystem.data.modelMatrices[i];
+    mesh.vertexBufferAddress = cubeSystem.mesh.meshBuffers.vertexBufferAddress;
 
     VkPushConstantsInfo vertPushInfo = {};
     vertPushInfo.sType               = VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO;
-    vertPushInfo.layout              = pipelineLayout;
+    vertPushInfo.layout              = renderData.pipelineLayout;
     vertPushInfo.stageFlags          = VK_SHADER_STAGE_VERTEX_BIT;
     vertPushInfo.offset              = 0;
     vertPushInfo.size                = sizeof(VertPushData);
     vertPushInfo.pValues             = &mesh;
 
-    dispatch.cmdPushConstants(cmd, vertPushInfo.layout, vertPushInfo.stageFlags,
-                              vertPushInfo.offset, vertPushInfo.size,
-                              vertPushInfo.pValues);
+    core.dispatch.cmdPushConstants(cmd, vertPushInfo.layout,
+                                   vertPushInfo.stageFlags, vertPushInfo.offset,
+                                   vertPushInfo.size, vertPushInfo.pValues);
 
     FragPushData fragColor = {cubeSystem.data.colors[i]};
 
     constexpr size_t    fragOffset   = (sizeof(VertPushData) + 15) & ~15;
     VkPushConstantsInfo fragPushInfo = {};
     fragPushInfo.sType               = VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO;
-    fragPushInfo.layout              = pipelineLayout;
+    fragPushInfo.layout              = renderData.pipelineLayout;
     fragPushInfo.stageFlags          = VK_SHADER_STAGE_FRAGMENT_BIT;
     fragPushInfo.offset              = fragOffset;
     fragPushInfo.size                = sizeof(FragPushData);
     fragPushInfo.pValues             = &fragColor;
 
-    dispatch.cmdPushConstants(cmd, fragPushInfo.layout, fragPushInfo.stageFlags,
-                              fragPushInfo.offset, fragPushInfo.size,
-                              fragPushInfo.pValues);
+    core.dispatch.cmdPushConstants(cmd, fragPushInfo.layout,
+                                   fragPushInfo.stageFlags, fragPushInfo.offset,
+                                   fragPushInfo.size, fragPushInfo.pValues);
 
-    dispatch.cmdDrawIndexed(cmd, 36, 1, 0, 0, 0);
+    core.dispatch.cmdDrawIndexed(cmd, 36, 1, 0, 0, 0);
   }
 
-  dispatch.cmdEndRendering(cmd);
+  core.dispatch.cmdEndRendering(cmd);
 }
 
-AllocatedBuffer LeafEngine::allocateBuffer(size_t             allocSize,
-                                           VkBufferUsageFlags usage,
-                                           VmaMemoryUsage     memoryUsage) {
+AllocatedBuffer Engine::allocateBuffer(size_t             allocSize,
+                                       VkBufferUsageFlags usage,
+                                       VmaMemoryUsage     memoryUsage) {
 
   VkBufferCreateInfo bufferInfo = {};
   bufferInfo.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -686,20 +710,19 @@ AllocatedBuffer LeafEngine::allocateBuffer(size_t             allocSize,
 
   AllocatedBuffer newBuffer;
 
-  vkAssert(vmaCreateBuffer(allocator, &bufferInfo, &vmaAllocInfo,
+  vkAssert(vmaCreateBuffer(core.allocator, &bufferInfo, &vmaAllocInfo,
                            &newBuffer.buffer, &newBuffer.allocation,
                            &newBuffer.allocationInfo));
-
   return newBuffer;
 }
 
-GPUMeshBuffers LeafEngine::uploadMesh(std::span<uint32_t> indices,
-                                      std::span<Vertex>   vertices) {
+GPUMeshBuffers Engine::uploadMesh(std::span<uint32_t> indices,
+                                  std::span<Vertex>   vertices) {
   const size_t   vertexBufferSize = vertices.size() * sizeof(Vertex);
   const size_t   indexBufferSize  = indices.size() * sizeof(uint32_t);
   GPUMeshBuffers newSurface;
 
-  newSurface.vertexbuffer = allocateBuffer(
+  newSurface.vertexBuffer = allocateBuffer(
       vertexBufferSize,
       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
           VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
@@ -707,9 +730,9 @@ GPUMeshBuffers LeafEngine::uploadMesh(std::span<uint32_t> indices,
 
   VkBufferDeviceAddressInfo deviceAddressInfo = {};
   deviceAddressInfo.sType  = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-  deviceAddressInfo.buffer = newSurface.vertexbuffer.buffer;
+  deviceAddressInfo.buffer = newSurface.vertexBuffer.buffer;
   newSurface.vertexBufferAddress =
-      dispatch.getBufferDeviceAddress(&deviceAddressInfo);
+      core.dispatch.getBufferDeviceAddress(&deviceAddressInfo);
 
   newSurface.indexBuffer = allocateBuffer(indexBufferSize,
                                           VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
@@ -725,8 +748,8 @@ GPUMeshBuffers LeafEngine::uploadMesh(std::span<uint32_t> indices,
   memcpy((char*)data + vertexBufferSize, indices.data(), indexBufferSize);
 
   // immediate submit
-  vkAssert(dispatch.resetFences(1, &immediateData.fence));
-  vkAssert(dispatch.resetCommandBuffer(immediateData.commandBuffer, 0));
+  vkAssert(core.dispatch.resetFences(1, &immediateData.fence));
+  vkAssert(core.dispatch.resetCommandBuffer(immediateData.commandBuffer, 0));
 
   VkCommandBuffer cmd = immediateData.commandBuffer;
 
@@ -734,7 +757,7 @@ GPUMeshBuffers LeafEngine::uploadMesh(std::span<uint32_t> indices,
   cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
   cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-  vkAssert(dispatch.beginCommandBuffer(cmd, &cmdBeginInfo));
+  vkAssert(core.dispatch.beginCommandBuffer(cmd, &cmdBeginInfo));
 
   VkBufferCopy2 vertexCopy = {};
   vertexCopy.sType         = VK_STRUCTURE_TYPE_BUFFER_COPY_2;
@@ -743,11 +766,11 @@ GPUMeshBuffers LeafEngine::uploadMesh(std::span<uint32_t> indices,
   VkCopyBufferInfo2 vertexCopyInfo = {};
   vertexCopyInfo.sType             = VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2;
   vertexCopyInfo.srcBuffer         = staging.buffer;
-  vertexCopyInfo.dstBuffer         = newSurface.vertexbuffer.buffer;
+  vertexCopyInfo.dstBuffer         = newSurface.vertexBuffer.buffer;
   vertexCopyInfo.regionCount       = 1;
   vertexCopyInfo.pRegions          = &vertexCopy;
 
-  dispatch.cmdCopyBuffer2(cmd, &vertexCopyInfo);
+  core.dispatch.cmdCopyBuffer2(cmd, &vertexCopyInfo);
 
   VkBufferCopy2 indexCopy = {};
   indexCopy.sType         = VK_STRUCTURE_TYPE_BUFFER_COPY_2;
@@ -761,9 +784,9 @@ GPUMeshBuffers LeafEngine::uploadMesh(std::span<uint32_t> indices,
   indexCopyInfo.regionCount       = 1;
   indexCopyInfo.pRegions          = &indexCopy;
 
-  dispatch.cmdCopyBuffer2(cmd, &indexCopyInfo);
+  core.dispatch.cmdCopyBuffer2(cmd, &indexCopyInfo);
 
-  vkAssert(dispatch.endCommandBuffer(cmd));
+  vkAssert(core.dispatch.endCommandBuffer(cmd));
 
   VkCommandBufferSubmitInfo cmdSubmitInfo = {};
   cmdSubmitInfo.sType         = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
@@ -774,55 +797,29 @@ GPUMeshBuffers LeafEngine::uploadMesh(std::span<uint32_t> indices,
   submit.commandBufferInfoCount = 1;
   submit.pCommandBufferInfos    = &cmdSubmitInfo;
 
+  vkAssert(core.dispatch.queueSubmit2(core.graphicsQueue, 1, &submit,
+                                      immediateData.fence));
   vkAssert(
-      dispatch.queueSubmit2(graphicsQueue, 1, &submit, immediateData.fence));
-  vkAssert(dispatch.waitForFences(1, &immediateData.fence, true, UINT64_MAX));
+      core.dispatch.waitForFences(1, &immediateData.fence, true, UINT64_MAX));
 
-  vmaDestroyBuffer(allocator, staging.buffer, staging.allocation);
+  vmaDestroyBuffer(core.allocator, staging.buffer, staging.allocation);
 
   return newSurface;
 }
 
-void LeafEngine::initMesh() {
+void Engine::initMesh() {
 
-  std::array<Vertex, 8> cubeVertices;
-
-  cubeVertices[0].position = {-0.5f, -0.5f, 0.5f};
-  cubeVertices[1].position = {0.5f, -0.5f, 0.5f};
-  cubeVertices[2].position = {0.5f, 0.5f, 0.5f};
-  cubeVertices[3].position = {-0.5f, 0.5f, 0.5f};
-
-  cubeVertices[4].position = {-0.5f, -0.5f, -0.5f};
-  cubeVertices[5].position = {0.5f, -0.5f, -0.5f};
-  cubeVertices[6].position = {0.5f, 0.5f, -0.5f};
-  cubeVertices[7].position = {-0.5f, 0.5f, -0.5f};
-
-  std::array<uint32_t, 36> cubeIndices = {// Front face
-                                          0, 1, 2, 2, 3, 0,
-                                          // Back face
-                                          4, 6, 5, 6, 4, 7,
-                                          // Left face
-                                          4, 0, 3, 3, 7, 4,
-                                          // Right face
-                                          1, 5, 6, 6, 2, 1,
-                                          // Top face
-                                          3, 2, 6, 6, 7, 3,
-                                          // Bottom face
-                                          4, 5, 1, 1, 0, 4};
-
-  rectangle = uploadMesh(cubeIndices, cubeVertices);
-  fmt::println("indexBuffer: {}", (void*)rectangle.indexBuffer.buffer);
-  fmt::println("vertexBuffer: {}", (void*)rectangle.vertexbuffer.buffer);
-
-  vulkanDestroyer.addBuffer(rectangle.indexBuffer);
-  vulkanDestroyer.addBuffer(rectangle.vertexbuffer);
+  cubeSystem.mesh.meshBuffers =
+      uploadMesh(cubeSystem.mesh.indices, cubeSystem.mesh.vertices);
+  vulkanDestroyer.addAllocatedBuffer(cubeSystem.mesh.meshBuffers.indexBuffer);
+  vulkanDestroyer.addAllocatedBuffer(cubeSystem.mesh.meshBuffers.vertexBuffer);
 }
 
-void LeafEngine::processEvent(SDL_Event& e) { camera.processSDLEvent(e); }
+void Engine::processEvent(SDL_Event& e) { camera.processSDLEvent(e); }
 
-void LeafEngine::update() { camera.update(); }
+void Engine::update() { camera.update(); }
 
-void LeafEngine::initDescriptorPool() {
+void Engine::initDescriptorPool() {
 
   VkDescriptorPoolSize poolSizes[] = {{
       .type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -835,9 +832,10 @@ void LeafEngine::initDescriptorPool() {
   poolInfo.pPoolSizes    = poolSizes;
   poolInfo.maxSets       = framesInFlight;
 
-  vkAssert(dispatch.createDescriptorPool(&poolInfo, nullptr, &descriptorPool));
+  vkAssert(core.dispatch.createDescriptorPool(&poolInfo, nullptr,
+                                              &renderData.descriptorPool));
 }
-void LeafEngine::initDescriptorLayout() {
+void Engine::initDescriptorLayout() {
 
   VkDescriptorSetLayoutBinding bindings[] = {
       {.binding            = 0,
@@ -851,56 +849,57 @@ void LeafEngine::initDescriptorLayout() {
   layoutInfo.bindingCount = 1;
   layoutInfo.pBindings    = bindings;
 
-  vkAssert(dispatch.createDescriptorSetLayout(&layoutInfo, nullptr,
-                                              &descriptorSetLayout));
+  vkAssert(core.dispatch.createDescriptorSetLayout(
+      &layoutInfo, nullptr, &renderData.descriptorSetLayout));
 }
 
-void LeafEngine::initCamera() {
+void Engine::initCamera() {
   camera        = Camera{};
   camera.frames = framesInFlight;
   camera.speed  = 0.2;
 
-  camera.aspectRatio = swapchainExtent.width / (float)swapchainExtent.height;
+  camera.aspectRatio = swapchain.extent.width / (float)swapchain.extent.height;
   fmt::println("Asp; {}", camera.aspectRatio);
-  cameraBuffers.resize(framesInFlight);
+  renderData.cameraBuffers = std::vector<AllocatedBuffer>(framesInFlight);
   for (size_t i = 0; i < framesInFlight; i++) {
-    cameraBuffers[i] =
+    renderData.cameraBuffers[i] =
         allocateBuffer(sizeof(CameraUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                        VMA_MEMORY_USAGE_CPU_TO_GPU);
   }
 }
 
-void LeafEngine::initDescriptorSets() {
+void Engine::initDescriptorSets() {
   std::vector<VkDescriptorSetLayout> layouts(framesInFlight,
-                                             descriptorSetLayout);
+                                             renderData.descriptorSetLayout);
   VkDescriptorSetAllocateInfo        allocInfo = {};
   allocInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-  allocInfo.descriptorPool     = descriptorPool;
+  allocInfo.descriptorPool     = renderData.descriptorPool;
   allocInfo.descriptorSetCount = framesInFlight;
   allocInfo.pSetLayouts        = layouts.data();
 
-  descriptorSets.resize(framesInFlight);
-  vkAssert(dispatch.allocateDescriptorSets(&allocInfo, descriptorSets.data()));
+  renderData.descriptorSets.resize(framesInFlight);
+  vkAssert(core.dispatch.allocateDescriptorSets(
+      &allocInfo, renderData.descriptorSets.data()));
 
   for (size_t i = 0; i < framesInFlight; i++) {
     VkDescriptorBufferInfo cameraBufferInfo{};
-    cameraBufferInfo.buffer = cameraBuffers[i].buffer;
+    cameraBufferInfo.buffer = renderData.cameraBuffers[i].buffer;
     cameraBufferInfo.offset = 0;
     cameraBufferInfo.range  = sizeof(CameraUBO);
 
     VkWriteDescriptorSet descriptorWrite = {};
     descriptorWrite.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet          = descriptorSets[i];
+    descriptorWrite.dstSet          = renderData.descriptorSets[i];
     descriptorWrite.dstBinding      = 0;
     descriptorWrite.dstArrayElement = 0;
     descriptorWrite.descriptorCount = 1;
     descriptorWrite.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     descriptorWrite.pBufferInfo     = &cameraBufferInfo;
 
-    dispatch.updateDescriptorSets(1, &descriptorWrite, 0, nullptr);
+    core.dispatch.updateDescriptorSets(1, &descriptorWrite, 0, nullptr);
   }
 }
 
-void LeafEngine::initCubes() {
+void Engine::initCubes() { cubeSystem.init(); }
 
-}
+}; // namespace LeafEngine

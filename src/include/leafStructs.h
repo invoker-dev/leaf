@@ -29,7 +29,7 @@ struct ImmediateData {
   VkFence         fence;
 };
 
-struct imguiContext {
+struct ImguiContext {
   VkDescriptorPool descriptorPool;
   VkCommandPool    commandPool;
   VkCommandBuffer  commandBuffer;
@@ -53,7 +53,7 @@ struct Vertex {
 
 struct GPUMeshBuffers {
   AllocatedBuffer indexBuffer;
-  AllocatedBuffer vertexbuffer;
+  AllocatedBuffer vertexBuffer;
   VkDeviceAddress vertexBufferAddress;
 };
 

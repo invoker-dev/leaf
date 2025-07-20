@@ -5,7 +5,7 @@
 class VulkanDestroyer { // DOOM!
 public:
   void addImage(AllocatedImage image);
-  void addBuffer(AllocatedBuffer buffer);
+  void addAllocatedBuffer(AllocatedBuffer buffer);
   void addCommandPool(VkCommandPool pool);
   void addSemaphore(VkSemaphore semaphore);
   void addFence(VkFence fence);
