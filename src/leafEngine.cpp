@@ -1,12 +1,11 @@
-#include "fastgltf/types.hpp"
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_gpu.h>
 #include <SDL3/SDL_init.h>
+#include <SDL3/SDL_mouse.h>
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
 #include <VkBootstrap.h>
-#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -46,6 +45,7 @@ LeafEngine::LeafEngine() {
   initImGUI();
   initPipeline();
   initMesh();
+  initCubes();
 }
 LeafEngine::~LeafEngine() {
 
@@ -78,6 +78,8 @@ void LeafEngine::createSDLWindow() {
     fmt::print("failed to show SDL window: {}\n", SDL_GetError());
     std::exit(-1);
   }
+
+  SDL_SetWindowRelativeMouseMode(window, true);
 }
 
 void LeafEngine::initVulkan() {
@@ -437,14 +439,10 @@ void LeafEngine::drawImGUI(VkCommandBuffer cmd, VkImageView targetImage) {
   // UI
   ImGui::Begin("TRIANGLE SLIDER");
   ImGui::Text("slide:");
-  ImGui::SliderFloat("RED", &rectangleColor.r, 0.f, 1.f);
-  ImGui::SliderFloat("GREEN", &rectangleColor.g, 0.f, 1.f);
-  ImGui::SliderFloat("BLUE", &rectangleColor.b, 0.f, 1.f);
   ImGui::ColorEdit3("RECCOLOR", glm::value_ptr(rectangleColor));
   ImGui::ColorEdit3("BGCOLOR", glm::value_ptr(backgroundColor));
 
   ImGui::End();
-
   ImGui::Render();
 
   VkRenderingAttachmentInfo colorAttachment = {};
@@ -606,10 +604,6 @@ void LeafEngine::drawGeometry(VkCommandBuffer cmd,
   dispatch.cmdBeginRendering(cmd, &renderInfo);
   dispatch.cmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
-  VertPushData mesh        = {};
-  mesh.model               = glm::mat4{1.f};
-  mesh.vertexBufferAddress = rectangle.vertexBufferAddress;
-
   CameraUBO* mapped = (CameraUBO*)cameraBuffers[frameNumber % framesInFlight]
                           .allocation->GetMappedData();
   mapped->view       = camera.getViewMatrix();
@@ -618,38 +612,10 @@ void LeafEngine::drawGeometry(VkCommandBuffer cmd,
   dispatch.cmdBindDescriptorSets(
       cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1,
       &descriptorSets[frameNumber % framesInFlight], 0, nullptr);
-  VkPushConstantsInfo vertPushInfo = {};
-  vertPushInfo.sType               = VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO;
-  vertPushInfo.layout              = pipelineLayout;
-  vertPushInfo.stageFlags          = VK_SHADER_STAGE_VERTEX_BIT;
-  vertPushInfo.offset              = 0;
-  vertPushInfo.size                = sizeof(VertPushData);
-  vertPushInfo.pValues             = &mesh;
-
-  dispatch.cmdPushConstants(cmd, vertPushInfo.layout, vertPushInfo.stageFlags,
-                            vertPushInfo.offset, vertPushInfo.size,
-                            vertPushInfo.pValues);
-  // dispatch.cmdPushConstants2(cmd, &vertPushInfo)
-  // does not work, Missing extension (?)
-
-  FragPushData fragColor = {rectangleColor};
-
-  constexpr size_t    fragOffset   = (sizeof(VertPushData) + 15) & ~15;
-  VkPushConstantsInfo fragPushInfo = {};
-  fragPushInfo.sType               = VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO;
-  fragPushInfo.layout              = pipelineLayout;
-  fragPushInfo.stageFlags          = VK_SHADER_STAGE_FRAGMENT_BIT;
-  fragPushInfo.offset              = fragOffset;
-  fragPushInfo.size                = sizeof(FragPushData);
-  fragPushInfo.pValues             = &fragColor;
-
-  dispatch.cmdPushConstants(cmd, fragPushInfo.layout, fragPushInfo.stageFlags,
-                            fragPushInfo.offset, fragPushInfo.size,
-                            fragPushInfo.pValues);
-  // dispatch.cmdPushConstants2(cmd, &fragPushInfo);
 
   dispatch.cmdBindIndexBuffer(cmd, rectangle.indexBuffer.buffer, 0,
                               VK_INDEX_TYPE_UINT32);
+
   VkViewport viewport = {};
   viewport.x          = 0;
   viewport.y          = 0;
@@ -666,7 +632,42 @@ void LeafEngine::drawGeometry(VkCommandBuffer cmd,
   scissor.extent.height = drawExtent.height;
   dispatch.cmdSetScissor(cmd, 0, 1, &scissor);
 
-  dispatch.cmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
+  // per cube
+  for (size_t i = 0; i < cubeSystem.data.count; i++) {
+
+    VertPushData mesh = {};
+    mesh.model        = cubeSystem.data.modelMatrices[i];
+
+    VkPushConstantsInfo vertPushInfo = {};
+    vertPushInfo.sType               = VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO;
+    vertPushInfo.layout              = pipelineLayout;
+    vertPushInfo.stageFlags          = VK_SHADER_STAGE_VERTEX_BIT;
+    vertPushInfo.offset              = 0;
+    vertPushInfo.size                = sizeof(VertPushData);
+    vertPushInfo.pValues             = &mesh;
+
+    dispatch.cmdPushConstants(cmd, vertPushInfo.layout, vertPushInfo.stageFlags,
+                              vertPushInfo.offset, vertPushInfo.size,
+                              vertPushInfo.pValues);
+
+    FragPushData fragColor = {cubeSystem.data.colors[i]};
+
+    constexpr size_t    fragOffset   = (sizeof(VertPushData) + 15) & ~15;
+    VkPushConstantsInfo fragPushInfo = {};
+    fragPushInfo.sType               = VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO;
+    fragPushInfo.layout              = pipelineLayout;
+    fragPushInfo.stageFlags          = VK_SHADER_STAGE_FRAGMENT_BIT;
+    fragPushInfo.offset              = fragOffset;
+    fragPushInfo.size                = sizeof(FragPushData);
+    fragPushInfo.pValues             = &fragColor;
+
+    dispatch.cmdPushConstants(cmd, fragPushInfo.layout, fragPushInfo.stageFlags,
+                              fragPushInfo.offset, fragPushInfo.size,
+                              fragPushInfo.pValues);
+
+    dispatch.cmdDrawIndexed(cmd, 36, 1, 0, 0, 0);
+  }
+
   dispatch.cmdEndRendering(cmd);
 }
 
@@ -784,29 +785,32 @@ GPUMeshBuffers LeafEngine::uploadMesh(std::span<uint32_t> indices,
 
 void LeafEngine::initMesh() {
 
-  std::array<Vertex, 4> rectVertices;
+  std::array<Vertex, 8> cubeVertices;
 
-  rectVertices[0].position = {0.5, -0.5, 0};
-  rectVertices[1].position = {0.5, 0.5, 0};
-  rectVertices[2].position = {-0.5, -0.5, 0};
-  rectVertices[3].position = {-0.5, 0.5, 0};
+  cubeVertices[0].position = {-0.5f, -0.5f, 0.5f};
+  cubeVertices[1].position = {0.5f, -0.5f, 0.5f};
+  cubeVertices[2].position = {0.5f, 0.5f, 0.5f};
+  cubeVertices[3].position = {-0.5f, 0.5f, 0.5f};
 
-  // rectVertices[0].color = {0, 0, 0, 1};
-  // rectVertices[1].color = {0.5, 0.5, 0.5, 0};
-  // rectVertices[2].color = {1, 0, 0, 1};
-  // rectVertices[3].color = {0, 1, 0, 1};
+  cubeVertices[4].position = {-0.5f, -0.5f, -0.5f};
+  cubeVertices[5].position = {0.5f, -0.5f, -0.5f};
+  cubeVertices[6].position = {0.5f, 0.5f, -0.5f};
+  cubeVertices[7].position = {-0.5f, 0.5f, -0.5f};
 
-  std::array<uint32_t, 6> rectIndices;
+  std::array<uint32_t, 36> cubeIndices = {// Front face
+                                          0, 1, 2, 2, 3, 0,
+                                          // Back face
+                                          4, 6, 5, 6, 4, 7,
+                                          // Left face
+                                          4, 0, 3, 3, 7, 4,
+                                          // Right face
+                                          1, 5, 6, 6, 2, 1,
+                                          // Top face
+                                          3, 2, 6, 6, 7, 3,
+                                          // Bottom face
+                                          4, 5, 1, 1, 0, 4};
 
-  rectIndices[0] = 0;
-  rectIndices[1] = 1;
-  rectIndices[2] = 2;
-
-  rectIndices[3] = 2;
-  rectIndices[4] = 1;
-  rectIndices[5] = 3;
-
-  rectangle = uploadMesh(rectIndices, rectVertices);
+  rectangle = uploadMesh(cubeIndices, cubeVertices);
   fmt::println("indexBuffer: {}", (void*)rectangle.indexBuffer.buffer);
   fmt::println("vertexBuffer: {}", (void*)rectangle.vertexbuffer.buffer);
 
@@ -854,6 +858,7 @@ void LeafEngine::initDescriptorLayout() {
 void LeafEngine::initCamera() {
   camera        = Camera{};
   camera.frames = framesInFlight;
+  camera.speed  = 0.2;
 
   camera.aspectRatio = swapchainExtent.width / (float)swapchainExtent.height;
   fmt::println("Asp; {}", camera.aspectRatio);
@@ -894,4 +899,8 @@ void LeafEngine::initDescriptorSets() {
 
     dispatch.updateDescriptorSets(1, &descriptorWrite, 0, nullptr);
   }
+}
+
+void LeafEngine::initCubes() {
+
 }

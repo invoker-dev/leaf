@@ -1,11 +1,11 @@
-#include "leafStructs.h"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_events.h>
-#include <SDL3/SDL_keyboard.h>>
+#include <SDL3/SDL_keyboard.h>
 #include <SDL3/SDL_oldnames.h>
 #include <SDL3/SDL_scancode.h>
 #include <camera.h>
 #include <fmt/base.h>
+#include <glm/common.hpp>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/ext/matrix_transform.hpp>
@@ -16,6 +16,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/matrix.hpp>
 #include <glm/trigonometric.hpp>
+#include <leafStructs.h>
 void Camera::update() {
 
   glm::mat4 cameraRotation = getRotationMatrix();
@@ -28,24 +29,23 @@ void Camera::processSDLEvent(SDL_Event& e) {
 
   if (e.type == SDL_EVENT_KEY_DOWN) {
     if (scancode == SDL_SCANCODE_W) {
-      velocity.z = -1;
+      velocity.z = -speed;
     }
     if (scancode == SDL_SCANCODE_S) {
-      velocity.z = 1;
+      velocity.z = speed;
     }
     if (scancode == SDL_SCANCODE_A) {
-      velocity.x = -1;
+      velocity.x = -speed;
     }
     if (scancode == SDL_SCANCODE_D) {
-      velocity.x = 1;
+      velocity.x = speed;
     }
-    if(scancode == SDL_SCANCODE_SPACE){
+    if (scancode == SDL_SCANCODE_SPACE) {
       velocity.y = 0.3;
     }
-    if(scancode == SDL_SCANCODE_LCTRL){
+    if (scancode == SDL_SCANCODE_LCTRL) {
       velocity.y = -0.3;
     }
-
   }
 
   if (e.type == SDL_EVENT_KEY_UP) {
@@ -61,21 +61,19 @@ void Camera::processSDLEvent(SDL_Event& e) {
     if (scancode == SDL_SCANCODE_D) {
       velocity.x = 0;
     }
-    if(scancode == SDL_SCANCODE_SPACE){
+    if (scancode == SDL_SCANCODE_SPACE) {
       velocity.y = 0;
     }
-    if(scancode == SDL_SCANCODE_LCTRL){
+    if (scancode == SDL_SCANCODE_LCTRL) {
       velocity.y = 0;
     }
   }
-
 
   if (e.type == SDL_EVENT_MOUSE_MOTION) {
-    pitch += (float)e.motion.yrel * sensitivity;
+    pitch = glm::clamp(pitch + (float)e.motion.yrel * sensitivity,
+                       glm::radians(-90.0f), glm::radians(90.0f));
     yaw -= (float)e.motion.xrel * sensitivity;
   }
-
-  fmt::println("KEY PRESSED: {}", e.type);
 }
 
 glm::mat4 Camera::getViewMatrix() {

@@ -8,6 +8,7 @@
 #include <vk_mem_alloc.h>
 
 #include <camera.h>
+#include <cube.h>
 #include <leafStructs.h>
 #include <span>
 #include <vulkan/vulkan_core.h>
@@ -78,6 +79,7 @@ private:
 
   Camera camera;
 
+  // TODO: fix order
   void createSDLWindow();
   void initVulkan();
   void getQueues();
@@ -89,6 +91,9 @@ private:
   void initDescriptorSets();
   void initImGUI();
   void initPipeline();
+  void initMesh();
+  void initCamera();
+  void initCubes();
 
   void drawImGUI(VkCommandBuffer cmd, VkImageView targetImage);
   void drawBackground(VkCommandBuffer cmd);
@@ -98,7 +103,4 @@ private:
                                  VmaMemoryUsage memoryUsage);
   GPUMeshBuffers  uploadMesh(std::span<uint32_t> indices,
                              std::span<Vertex>   vertices);
-
-  void initMesh();
-  void initCamera();
 };

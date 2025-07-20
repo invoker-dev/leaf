@@ -34,7 +34,7 @@ void main()
 
     //output data
     gl_Position = camera.projection * camera.view * pushConstants.model *
-				vec4(v.position, 1.f);
+            vec4(v.position, 1.f);
     outColor = v.color.xyz;
     outUV.x = v.uv_x;
     outUV.y = v.uv_y;

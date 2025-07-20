@@ -25,6 +25,7 @@ public:
   float     pitch;
   float     yaw;
   float     sensitivity;
+  float     speed;
 
   float    aspectRatio;
   uint32_t frames;
