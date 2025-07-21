@@ -1,8 +1,17 @@
-
+// TODO: Swapchain resizing
+// TODO: Stencil Testing
+// TODO: Blending / transparency
+// TODO: mipmapping, texturesampling
+// TODO: Lighting
+// TODO: Normal maps
+// TODO: Various Post processing
+// CONTINOUS TODO: Real Architecture
+#include <SDL3/SDL_events.h>
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_gpu.h>
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_mouse.h>
+#include <SDL3/SDL_scancode.h>
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
 #include <VkBootstrap.h>
@@ -80,7 +89,8 @@ Engine::~Engine() {
 
 void Engine::createSDLWindow() {
 
-  SDL_WindowFlags sdlFlags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN);
+  SDL_WindowFlags sdlFlags =
+      (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
 
   surface.window = SDL_CreateWindow("LeafEngine", 2000, 1500, sdlFlags);
   if (!surface.window) {
@@ -93,7 +103,8 @@ void Engine::createSDLWindow() {
     std::exit(-1);
   }
 
-  SDL_SetWindowRelativeMouseMode(surface.window, true);
+  surface.captureMouse = true;
+  SDL_SetWindowRelativeMouseMode(surface.window, surface.captureMouse);
 }
 
 void Engine::initVulkan() {
@@ -189,19 +200,14 @@ void Engine::getQueues() {
       core.device.get_queue_index(vkb::QueueType::graphics).value();
 }
 
-void Engine::initSwapchain() {
-
-  int width, height;
-  SDL_GetWindowSizeInPixels(surface.window, &width, &height);
-  surface.extent = {static_cast<uint32_t>(width),
-                    static_cast<uint32_t>(height)};
-
-  swapchain.imageFormat = VK_FORMAT_B8G8R8A8_SRGB;
+void Engine::createSwapchain(uint32_t width, uint32_t height) {
 
   fmt::println("Window size:   [{} {}]", width, height);
 
   vkb::SwapchainBuilder swapchainBuilder{core.physicalDevice, core.device,
                                          surface.surface};
+
+  swapchain.imageFormat = VK_FORMAT_B8G8R8A8_UNORM;
 
   auto returnedSwapchain =
       swapchainBuilder.set_desired_format(surface.surfaceFormat)
@@ -220,11 +226,19 @@ void Engine::initSwapchain() {
     std::exit(-1);
   }
 
-  vkb::destroy_swapchain(swapchain.vkbSwapchain);
   swapchain.vkbSwapchain = returnedSwapchain.value();
   swapchain.imageViews   = swapchain.vkbSwapchain.get_image_views().value();
   swapchain.images       = swapchain.vkbSwapchain.get_images().value();
   swapchain.extent       = swapchain.vkbSwapchain.extent;
+}
+void Engine::initSwapchain() {
+
+  int width, height;
+  SDL_GetWindowSizeInPixels(surface.window, &width, &height);
+  surface.extent = {static_cast<uint32_t>(width),
+                    static_cast<uint32_t>(height)};
+
+  createSwapchain(width, height);
 
   VkExtent3D drawImageExtent = {};
   drawImageExtent.width      = surface.extent.width;
@@ -260,6 +274,38 @@ void Engine::initSwapchain() {
 
   vkAssert(core.dispatch.createImageView(&renderImageViewCreateInfo, nullptr,
                                          &renderData.drawImage.imageView));
+
+  renderData.depthImage        = {};
+  renderData.depthImage.format = VK_FORMAT_D32_SFLOAT;        // TODO subject to
+                                                              // change
+  renderData.depthImage.extent = renderData.drawImage.extent; // ?maybe
+
+  VkImageUsageFlags depthImageUsages = {};
+  depthImageUsages |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+  depthImageUsages |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+  depthImageUsages |= VK_IMAGE_USAGE_STORAGE_BIT;
+  depthImageUsages |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+
+  VkImageCreateInfo depthImageInfo =
+      leafInit::imageCreateInfo(renderData.depthImage.format, depthImageUsages,
+                                renderData.drawImage.extent);
+
+  VmaAllocationCreateInfo depthAllocInfo = {};
+  depthAllocInfo.usage                   = VMA_MEMORY_USAGE_GPU_ONLY;
+  depthAllocInfo.requiredFlags =
+      VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+  vmaCreateImage(core.allocator, &depthImageInfo, &depthAllocInfo,
+                 &renderData.depthImage.image,
+                 &renderData.depthImage.allocation, nullptr);
+
+  VkImageViewCreateInfo depthImageViewCreateInfo =
+      leafInit::imageViewCreateInfo(renderData.depthImage.format,
+                                    renderData.depthImage.image,
+                                    VK_IMAGE_ASPECT_DEPTH_BIT);
+
+  core.dispatch.createImageView(&depthImageViewCreateInfo, nullptr,
+                                &renderData.depthImage.imageView);
 }
 
 void Engine::initCommands() {
@@ -336,8 +382,8 @@ void Engine::initImGUI() {
 
   ImGui::StyleColorsDark();
   ImGuiStyle& style = ImGui::GetStyle();
-  // style.ScaleAllSizes(2);
-  // style.FontScaleDpi = 2.0;
+  style.ScaleAllSizes(1.5);
+  style.FontScaleDpi = 1.5;
 
   VkDescriptorPoolSize pool_sizes[] = {
       {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
@@ -455,10 +501,10 @@ void Engine::drawImGUI(VkCommandBuffer cmd, VkImageView targetImage) {
   ImGui::NewFrame();
 
   // UI
-  ImGui::Begin("TRIANGLE SLIDER");
+  ImGui::Begin("IMGUI BABY");
   ImGui::Text("slide:");
-  // ImGui::ColorEdit3("RECCOLOR", glm::value_ptr(rectangleColor));
   ImGui::ColorEdit3("BGCOLOR", glm::value_ptr(renderData.backgroundColor));
+  ImGui::SliderFloat("Render Scale", &renderData.renderScale, 0.1, 1.f);
 
   ImGui::End();
   ImGui::Render();
@@ -490,8 +536,12 @@ void Engine::draw() {
                                        1'000'000'000));
   vkAssert(core.dispatch.resetFences(1, &getCurrentFrame().renderFence));
 
-  renderData.drawExtent.width  = swapchain.extent.width;
-  renderData.drawExtent.height = swapchain.extent.height;
+  renderData.drawExtent.width =
+      std::min(swapchain.extent.width, renderData.drawImage.extent.height) *
+      renderData.renderScale;
+  renderData.drawExtent.height =
+      std::min(swapchain.extent.height, renderData.drawImage.extent.height) *
+      renderData.renderScale;
 
   uint32_t                  swapchainImageIndex;
   VkAcquireNextImageInfoKHR acquireInfo = {};
@@ -502,8 +552,12 @@ void Engine::draw() {
   acquireInfo.fence      = nullptr;
   acquireInfo.deviceMask = 0x1;
 
-  vkAssert(
-      core.dispatch.acquireNextImage2KHR(&acquireInfo, &swapchainImageIndex));
+  VkResult result =
+      core.dispatch.acquireNextImage2KHR(&acquireInfo, &swapchainImageIndex);
+  if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+    swapchain.resize = true;
+    return;
+  }
 
   VkCommandBuffer cmd = getCurrentFrame().commandBuffer;
   vkAssert(core.dispatch.resetCommandBuffer(cmd, 0));
@@ -589,7 +643,12 @@ void Engine::draw() {
   presentInfo.pWaitSemaphores    = &getCurrentFrame().renderSemaphore;
   presentInfo.waitSemaphoreCount = 1;
   presentInfo.pImageIndices      = &swapchainImageIndex;
-  vkAssert(core.dispatch.queuePresentKHR(core.graphicsQueue, &presentInfo));
+
+  VkResult presentResult =
+      core.dispatch.queuePresentKHR(core.graphicsQueue, &presentInfo);
+  if (presentResult == VK_SUBOPTIMAL_KHR) {
+    swapchain.resize = true;
+  }
 
   renderData.frameNumber++;
 }
@@ -832,9 +891,32 @@ void Engine::initMesh() {
       uploadMesh(cubeSystem.mesh.indices, cubeSystem.mesh.vertices);
 }
 
-void Engine::processEvent(SDL_Event& e) { camera.processSDLEvent(e); }
+void Engine::processEvent(SDL_Event& e) {
 
-void Engine::update() { camera.update(); }
+  if (e.type == SDL_EVENT_KEY_DOWN) {
+    if (e.key.scancode == SDL_SCANCODE_ESCAPE) {
+      surface.captureMouse = !surface.captureMouse;
+      camera.active        = !camera.active;
+      SDL_SetWindowRelativeMouseMode(surface.window, surface.captureMouse);
+    }
+  }
+
+  camera.processSDLEvent(e);
+}
+
+void Engine::update() {
+
+  // engine
+  int width, height;
+  SDL_GetWindowSizeInPixels(surface.window, &width, &height);
+  if (width != swapchain.extent.width || height != swapchain.extent.height) {
+    swapchain.resize = true;
+    resizeSwapchain(width, height);
+  }
+
+  // game
+  camera.update();
+}
 
 void Engine::initDescriptorPool() {
 
@@ -919,39 +1001,16 @@ void Engine::initDescriptorSets() {
 
 void Engine::initCubes() { cubeSystem = {}; }
 
-void Engine::initDepthTest() {
+void Engine::initDepthTest() {}
 
-  renderData.depthImage        = {};
-  renderData.depthImage.format = VK_FORMAT_D32_SFLOAT;        // TODO subject to
-                                                              // change
-  renderData.depthImage.extent = renderData.drawImage.extent; // ?maybe
+void Engine::resizeSwapchain(uint32_t width, uint32_t height) {
+  core.dispatch.deviceWaitIdle();
 
-  VkImageUsageFlags drawImageUsages = {};
-  drawImageUsages |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-  drawImageUsages |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-  drawImageUsages |= VK_IMAGE_USAGE_STORAGE_BIT;
-  drawImageUsages |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+  vkb::destroy_swapchain(swapchain.vkbSwapchain);
 
-  VkImageCreateInfo depthImageInfo =
-      leafInit::imageCreateInfo(renderData.depthImage.format, drawImageUsages,
-                                renderData.drawImage.extent);
-
-  VmaAllocationCreateInfo depthAllocInfo = {};
-  depthAllocInfo.usage                   = VMA_MEMORY_USAGE_GPU_ONLY;
-  depthAllocInfo.requiredFlags =
-      VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-  vmaCreateImage(core.allocator, &depthImageInfo, &depthAllocInfo,
-                 &renderData.depthImage.image,
-                 &renderData.depthImage.allocation, nullptr);
-
-  VkImageViewCreateInfo depthImageViewCreateInfo =
-      leafInit::imageViewCreateInfo(renderData.depthImage.format,
-                                    renderData.depthImage.image,
-                                    VK_IMAGE_ASPECT_DEPTH_BIT);
-
-  core.dispatch.createImageView(&depthImageViewCreateInfo, nullptr,
-                                &renderData.depthImage.imageView);
+  surface.extent = {width, height};
+  initSwapchain();
+  swapchain.resize = false;
 }
 
 }; // namespace LeafEngine

@@ -71,10 +71,12 @@ void Camera::processSDLEvent(SDL_Event& e) {
     }
   }
 
-  if (e.type == SDL_EVENT_MOUSE_MOTION) {
-    pitch = glm::clamp(pitch - (float)e.motion.yrel * sensitivity,
-                       glm::radians(-90.0f), glm::radians(90.0f));
-    yaw -= (float)e.motion.xrel * sensitivity;
+  if (active) {
+    if (e.type == SDL_EVENT_MOUSE_MOTION) {
+      pitch = glm::clamp(pitch - (float)e.motion.yrel * sensitivity,
+                         glm::radians(-90.0f), glm::radians(90.0f));
+      yaw -= (float)e.motion.xrel * sensitivity;
+    }
   }
 }
 
@@ -91,8 +93,7 @@ glm::mat4 Camera::getRotationMatrix() {
 }
 glm::mat4 Camera::getProjectionMatrix() {
 
-  glm::mat4 p =
-      glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 100.f);
-  p[1][1] = -p[1][1];
+  glm::mat4 p = glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 100.f);
+  p[1][1]     = -p[1][1];
   return p;
 }

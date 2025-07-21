@@ -2,6 +2,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_events.h>
 #include <VkBootstrap.h>
+#include <cstdint>
 #include <fmt/core.h>
 #include <glm/ext/vector_float4.hpp>
 #include <vector>
@@ -35,6 +36,7 @@ struct VulkanSurface {
   VkSurfaceKHR       surface;
   VkSurfaceFormatKHR surfaceFormat;
   SDL_Window*        window;
+  bool               captureMouse;
 };
 
 struct VulkanSwapchain {
@@ -44,6 +46,7 @@ struct VulkanSwapchain {
   std::vector<VkImage>     images;
   std::vector<VkImageView> imageViews;
   VkExtent2D               extent;
+  bool                     resize;
 };
 
 struct VulkanRenderData {
@@ -53,6 +56,7 @@ struct VulkanRenderData {
   uint64_t                     frameNumber;
   AllocatedImage               drawImage;
   VkExtent2D                   drawExtent;
+  float                        renderScale = 1.f;
   AllocatedImage               depthImage;
   VkDescriptorPool             descriptorPool;
   VkDescriptorSetLayout        descriptorSetLayout;
@@ -107,6 +111,8 @@ public:
   void drawBackground(VkCommandBuffer cmd);
   void drawGeometry(VkCommandBuffer cmd, uint32_t imgIndex);
 
+  void            createSwapchain(uint32_t width, uint32_t height);
+  void            resizeSwapchain(uint32_t width, uint32_t height);
   AllocatedBuffer allocateBuffer(size_t allocSize, VkBufferUsageFlags usage,
                                  VmaMemoryUsage memoryUsage);
   GPUMeshBuffers  uploadMesh(std::span<uint32_t> indices,

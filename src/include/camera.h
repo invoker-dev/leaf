@@ -3,7 +3,8 @@
 #include <glm/ext/vector_float3.hpp>
 #include <glm/vec3.hpp>
 
-struct Camera {
+class Camera {
+public:
   Camera() {
     position    = glm::vec3(0);
     velocity    = glm::vec3(0);
@@ -12,6 +13,7 @@ struct Camera {
     sensitivity = .001f;
     frames      = 0;
     aspectRatio = 0;
+    active      = true;
   };
   ~Camera() {};
   glm::mat4 getViewMatrix();
@@ -29,4 +31,5 @@ struct Camera {
 
   float    aspectRatio;
   uint32_t frames;
+  bool     active;
 };
