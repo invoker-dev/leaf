@@ -24,6 +24,7 @@ layout(binding = 0) uniform CameraUBO {
 layout(push_constant) uniform constants
 {
     mat4 model;
+    vec4 color;
     VertexBuffer vertexBuffer;
 } pushConstants;
 
@@ -35,7 +36,7 @@ void main()
     //output data
     gl_Position = camera.projection * camera.view * pushConstants.model *
             vec4(v.position, 1.f);
-    outColor = v.color.xyz;
+    outColor = pushConstants.color.xyz;
     outUV.x = v.uv_x;
     outUV.y = v.uv_y;
 }

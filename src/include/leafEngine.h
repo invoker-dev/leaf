@@ -53,6 +53,7 @@ struct RenderData {
   uint64_t                     frameNumber;
   AllocatedImage               drawImage;
   VkExtent2D                   drawExtent;
+  AllocatedImage               depthImage;
   VkDescriptorPool             descriptorPool;
   VkDescriptorSetLayout        descriptorSetLayout;
   std::vector<VkDescriptorSet> descriptorSets;
@@ -92,6 +93,7 @@ struct Engine {
   void initSwapchain();
   void initCommands();
   void initSynchronization();
+  void initDepthTest();
   void initDescriptorLayout();
   void initDescriptorPool();
   void initDescriptorSets();

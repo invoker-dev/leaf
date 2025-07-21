@@ -24,7 +24,7 @@ inline float pcg64(uint32_t state) {
 
 void System::init() {
 
-  initialCubeAmount = 2 << 6;
+  initialCubeAmount = 2 << 8;
   data.positions.reserve(initialCubeAmount);
   data.rotations.reserve(initialCubeAmount);
   data.scales.reserve(initialCubeAmount);

@@ -137,7 +137,6 @@ macro(compile_shader SHADER_NAME)
     list(APPEND COMPILED_SHADER_FILES ${SHADER_SPIRV_PATH})
 endmacro()
 
-compile_shader(triangle.vert)
 compile_shader(triangleMesh.vert)
 compile_shader(triangle.frag)
 

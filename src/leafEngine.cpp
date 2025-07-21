@@ -1,4 +1,4 @@
-#include <SDL3/SDL_error.h>
+
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_gpu.h>
 #include <SDL3/SDL_init.h>
@@ -45,9 +45,11 @@ void Engine::init() {
   initSwapchain();
   initCommands();
   initSynchronization();
+  initDepthTest();
   initDescriptorLayout();
   initDescriptorPool();
 
+  // TODO: This order is not fine
   initCamera();
   initDescriptorSets();
   initImGUI();
@@ -230,9 +232,9 @@ void Engine::initSwapchain() {
   drawImageExtent.height     = surface.extent.height;
   drawImageExtent.depth      = 1;
 
-  renderData.drawImage             = {};
-  renderData.drawImage.imageFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
-  renderData.drawImage.imageExtent = drawImageExtent;
+  renderData.drawImage        = {};
+  renderData.drawImage.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+  renderData.drawImage.extent = drawImageExtent;
 
   VkImageUsageFlags drawImageUsages = {};
   drawImageUsages |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
@@ -241,7 +243,7 @@ void Engine::initSwapchain() {
   drawImageUsages |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
   VkImageCreateInfo renderImageCreateInfo = leafInit::imageCreateInfo(
-      renderData.drawImage.imageFormat, drawImageUsages, drawImageExtent);
+      renderData.drawImage.format, drawImageUsages, drawImageExtent);
 
   VmaAllocationCreateInfo renderImageAllocationInfo = {};
   renderImageAllocationInfo.usage                   = VMA_MEMORY_USAGE_GPU_ONLY;
@@ -253,7 +255,7 @@ void Engine::initSwapchain() {
                  &renderData.drawImage.allocation, nullptr);
 
   VkImageViewCreateInfo renderImageViewCreateInfo =
-      leafInit::imageViewCreateInfo(renderData.drawImage.imageFormat,
+      leafInit::imageViewCreateInfo(renderData.drawImage.format,
                                     renderData.drawImage.image,
                                     VK_IMAGE_ASPECT_COLOR_BIT);
 
@@ -431,11 +433,12 @@ void Engine::initPipeline() {
   pipelineBuilder.setInputTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
   pipelineBuilder.setPolygonMode(VK_POLYGON_MODE_FILL);
   // pipelineBuilder.setPolygonMode(VK_POLYGON_MODE_LINE);
-  pipelineBuilder.setCullMode(VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_CLOCKWISE);
+  pipelineBuilder.setCullMode(VK_CULL_MODE_BACK_BIT,
+                              VK_FRONT_FACE_COUNTER_CLOCKWISE);
   pipelineBuilder.disableMultiSampling();
   pipelineBuilder.disableBlending();
-  pipelineBuilder.disableDepthTest();
-  pipelineBuilder.setColorAttachmentFormat(renderData.drawImage.imageFormat);
+  pipelineBuilder.setDepthTest(false);
+  pipelineBuilder.setColorAttachmentFormat(renderData.drawImage.format);
 
   renderData.pipeline = pipelineBuilder.build();
 
@@ -515,11 +518,19 @@ void Engine::draw() {
   leafUtil::transitionImage(cmd, renderData.drawImage.image,
                             VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
+  // leafUtil::transitionImage(cmd, renderData.depthImage.image,
+  //                           VK_IMAGE_LAYOUT_UNDEFINED,
+  //                           VK_IMAGE_LAYOUT_GENERAL);
+  //
   drawBackground(cmd);
 
   leafUtil::transitionImage(cmd, renderData.drawImage.image,
                             VK_IMAGE_LAYOUT_GENERAL,
                             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+  leafUtil::transitionImage(cmd, renderData.depthImage.image,
+                            VK_IMAGE_LAYOUT_UNDEFINED,
+                            VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
 
   drawGeometry(cmd, swapchainImageIndex);
 
@@ -607,9 +618,17 @@ void Engine::drawGeometry(VkCommandBuffer cmd, uint32_t swapchainImageIndex) {
   colorAttachment.sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
   colorAttachment.imageView   = renderData.drawImage.imageView;
   colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-  colorAttachment.loadOp      = VK_ATTACHMENT_LOAD_OP_LOAD;
+  colorAttachment.loadOp      = VK_ATTACHMENT_LOAD_OP_CLEAR;
   colorAttachment.storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
   colorAttachment.clearValue  = {};
+
+  VkRenderingAttachmentInfo depthAttachment = {};
+  depthAttachment.sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+  depthAttachment.imageView   = renderData.depthImage.imageView;
+  depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+  depthAttachment.loadOp      = VK_ATTACHMENT_LOAD_OP_CLEAR;
+  depthAttachment.storeOp     = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  depthAttachment.clearValue  = {.depthStencil = {1.0f, 0}};
 
   VkRenderingInfo renderInfo = {};
   renderInfo.sType           = VK_STRUCTURE_TYPE_RENDERING_INFO;
@@ -617,7 +636,7 @@ void Engine::drawGeometry(VkCommandBuffer cmd, uint32_t swapchainImageIndex) {
   renderInfo.layerCount = 1;
   renderInfo.colorAttachmentCount = 1;
   renderInfo.pColorAttachments    = &colorAttachment;
-  renderInfo.pDepthAttachment     = nullptr;
+  renderInfo.pDepthAttachment     = &depthAttachment;
   renderInfo.pStencilAttachment   = nullptr;
 
   core.dispatch.cmdBeginRendering(cmd, &renderInfo);
@@ -660,6 +679,7 @@ void Engine::drawGeometry(VkCommandBuffer cmd, uint32_t swapchainImageIndex) {
 
     VertPushData mesh        = {};
     mesh.model               = cubeSystem.data.modelMatrices[i];
+    mesh.color               = cubeSystem.data.colors[i];
     mesh.vertexBufferAddress = cubeSystem.mesh.meshBuffers.vertexBufferAddress;
 
     VkPushConstantsInfo vertPushInfo = {};
@@ -674,20 +694,21 @@ void Engine::drawGeometry(VkCommandBuffer cmd, uint32_t swapchainImageIndex) {
                                    vertPushInfo.stageFlags, vertPushInfo.offset,
                                    vertPushInfo.size, vertPushInfo.pValues);
 
-    FragPushData fragColor = {cubeSystem.data.colors[i]};
+    // FragPushData fragColor = {cubeSystem.data.colors[i]};
 
-    constexpr size_t    fragOffset   = (sizeof(VertPushData) + 15) & ~15;
-    VkPushConstantsInfo fragPushInfo = {};
-    fragPushInfo.sType               = VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO;
-    fragPushInfo.layout              = renderData.pipelineLayout;
-    fragPushInfo.stageFlags          = VK_SHADER_STAGE_FRAGMENT_BIT;
-    fragPushInfo.offset              = fragOffset;
-    fragPushInfo.size                = sizeof(FragPushData);
-    fragPushInfo.pValues             = &fragColor;
+    // constexpr size_t    fragOffset   = (sizeof(VertPushData) + 15) & ~15;
+    // VkPushConstantsInfo fragPushInfo = {};
+    // fragPushInfo.sType               = VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO;
+    // fragPushInfo.layout              = renderData.pipelineLayout;
+    // fragPushInfo.stageFlags          = VK_SHADER_STAGE_FRAGMENT_BIT;
+    // fragPushInfo.offset              = fragOffset;
+    // fragPushInfo.size                = sizeof(FragPushData);
+    // fragPushInfo.pValues             = &fragColor;
 
-    core.dispatch.cmdPushConstants(cmd, fragPushInfo.layout,
-                                   fragPushInfo.stageFlags, fragPushInfo.offset,
-                                   fragPushInfo.size, fragPushInfo.pValues);
+    // core.dispatch.cmdPushConstants(cmd, fragPushInfo.layout,
+    //                                fragPushInfo.stageFlags,
+    //                                fragPushInfo.offset, fragPushInfo.size,
+    //                                fragPushInfo.pValues);
 
     core.dispatch.cmdDrawIndexed(cmd, 36, 1, 0, 0, 0);
   }
@@ -713,6 +734,8 @@ AllocatedBuffer Engine::allocateBuffer(size_t             allocSize,
   vkAssert(vmaCreateBuffer(core.allocator, &bufferInfo, &vmaAllocInfo,
                            &newBuffer.buffer, &newBuffer.allocation,
                            &newBuffer.allocationInfo));
+
+  vulkanDestroyer.addAllocatedBuffer(newBuffer);
   return newBuffer;
 }
 
@@ -811,8 +834,6 @@ void Engine::initMesh() {
 
   cubeSystem.mesh.meshBuffers =
       uploadMesh(cubeSystem.mesh.indices, cubeSystem.mesh.vertices);
-  vulkanDestroyer.addAllocatedBuffer(cubeSystem.mesh.meshBuffers.indexBuffer);
-  vulkanDestroyer.addAllocatedBuffer(cubeSystem.mesh.meshBuffers.vertexBuffer);
 }
 
 void Engine::processEvent(SDL_Event& e) { camera.processSDLEvent(e); }
@@ -901,5 +922,40 @@ void Engine::initDescriptorSets() {
 }
 
 void Engine::initCubes() { cubeSystem.init(); }
+
+void Engine::initDepthTest() {
+
+  renderData.depthImage        = {};
+  renderData.depthImage.format = VK_FORMAT_D32_SFLOAT;        // TODO subject to
+                                                              // change
+  renderData.depthImage.extent = renderData.drawImage.extent; // ?maybe
+
+  VkImageUsageFlags drawImageUsages = {};
+  drawImageUsages |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+  drawImageUsages |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+  drawImageUsages |= VK_IMAGE_USAGE_STORAGE_BIT;
+  drawImageUsages |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+
+  VkImageCreateInfo depthImageInfo =
+      leafInit::imageCreateInfo(renderData.depthImage.format, drawImageUsages,
+                                renderData.drawImage.extent);
+
+  VmaAllocationCreateInfo depthAllocInfo = {};
+  depthAllocInfo.usage                   = VMA_MEMORY_USAGE_GPU_ONLY;
+  depthAllocInfo.requiredFlags =
+      VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+  vmaCreateImage(core.allocator, &depthImageInfo, &depthAllocInfo,
+                 &renderData.depthImage.image,
+                 &renderData.depthImage.allocation, nullptr);
+
+  VkImageViewCreateInfo depthImageViewCreateInfo =
+      leafInit::imageViewCreateInfo(renderData.depthImage.format,
+                                    renderData.depthImage.image,
+                                    VK_IMAGE_ASPECT_DEPTH_BIT);
+
+  core.dispatch.createImageView(&depthImageViewCreateInfo, nullptr,
+                                &renderData.depthImage.imageView);
+}
 
 }; // namespace LeafEngine

@@ -28,7 +28,7 @@ PipelineBuilder::PipelineBuilder(vkb::DispatchTable dispatch) {
       VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
 
   renderInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-  renderInfo.depthAttachmentFormat   = VK_FORMAT_UNDEFINED;
+  renderInfo.depthAttachmentFormat   = VK_FORMAT_D32_SFLOAT;
   renderInfo.stencilAttachmentFormat = VK_FORMAT_UNDEFINED;
 
   shaderStages.clear();
@@ -142,14 +142,28 @@ void PipelineBuilder::setColorAttachmentFormat(VkFormat format) {
   renderInfo.pColorAttachmentFormats = &colorAttachmentFormat;
 }
 
-void PipelineBuilder::disableDepthTest() {
-  depthStencil.depthTestEnable       = VK_FALSE;
-  depthStencil.depthWriteEnable      = VK_FALSE;
-  depthStencil.depthCompareOp        = VK_COMPARE_OP_NEVER;
-  depthStencil.depthBoundsTestEnable = VK_FALSE;
-  depthStencil.stencilTestEnable     = VK_FALSE;
-  depthStencil.front                 = {};
-  depthStencil.back                  = {};
-  depthStencil.minDepthBounds        = 0.f;
-  depthStencil.maxDepthBounds        = 1.f;
+void PipelineBuilder::setDepthTest(bool mode) {
+  if (mode) {
+    depthStencil.depthTestEnable       = VK_TRUE;
+    depthStencil.depthWriteEnable      = VK_TRUE;
+    depthStencil.depthCompareOp        = VK_COMPARE_OP_LESS;
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+    depthStencil.stencilTestEnable     = VK_FALSE;
+    depthStencil.front                 = {};
+    depthStencil.front.compareOp       = VK_COMPARE_OP_ALWAYS;
+    depthStencil.back                  = {};
+    depthStencil.back.compareOp        = VK_COMPARE_OP_ALWAYS;
+    depthStencil.minDepthBounds        = 0.f;
+    depthStencil.maxDepthBounds        = 1.f;
+  } else {
+    depthStencil.depthTestEnable       = VK_FALSE;
+    depthStencil.depthWriteEnable      = VK_FALSE;
+    depthStencil.depthCompareOp        = VK_COMPARE_OP_NEVER;
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+    depthStencil.stencilTestEnable     = VK_FALSE;
+    depthStencil.front                 = {};
+    depthStencil.back                  = {};
+    depthStencil.minDepthBounds        = 0.f;
+    depthStencil.maxDepthBounds        = 1.f;
+  }
 }

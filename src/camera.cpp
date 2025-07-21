@@ -1,5 +1,3 @@
-#include <glm/ext/quaternion_geometric.hpp>
-#include <leafStructs.h>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_keyboard.h>
@@ -12,12 +10,14 @@
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/ext/quaternion_float.hpp>
+#include <glm/ext/quaternion_geometric.hpp>
 #include <glm/ext/quaternion_trigonometric.hpp>
 #include <glm/ext/vector_float3.hpp>
 #include <glm/ext/vector_float4.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/matrix.hpp>
 #include <glm/trigonometric.hpp>
+#include <leafStructs.h>
 void Camera::update() {
 
   glm::mat4 cameraRotation = getRotationMatrix();
@@ -71,7 +71,7 @@ void Camera::processSDLEvent(SDL_Event& e) {
   }
 
   if (e.type == SDL_EVENT_MOUSE_MOTION) {
-    pitch = glm::clamp(pitch + (float)e.motion.yrel * sensitivity,
+    pitch = glm::clamp(pitch - (float)e.motion.yrel * sensitivity,
                        glm::radians(-90.0f), glm::radians(90.0f));
     yaw -= (float)e.motion.xrel * sensitivity;
   }
@@ -87,9 +87,11 @@ glm::mat4 Camera::getRotationMatrix() {
   glm::quat pitchRotation = glm::angleAxis(pitch, glm::vec3{1.f, 0.f, 0.f});
   glm::quat yawRotation   = glm::angleAxis(yaw, glm::vec3{0.f, 1.f, 0.f});
   return glm::mat4_cast(yawRotation) * glm::mat4_cast(pitchRotation);
-
 }
 glm::mat4 Camera::getProjectionMatrix() {
 
-  return glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 100.f);
+  glm::mat4 p =
+      glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 100.f);
+  p[1][1] = -p[1][1];
+  return p;
 }

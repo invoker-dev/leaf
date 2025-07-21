@@ -8,7 +8,6 @@ namespace leafUtil {
 
 void transitionImage(VkCommandBuffer cmd, VkImage image,
                      VkImageLayout currentLayout, VkImageLayout newLayout) {
-
   VkImageMemoryBarrier2 imageBarrier = {};
   imageBarrier.sType                 = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
   imageBarrier.srcAccessMask         = VK_ACCESS_2_MEMORY_WRITE_BIT;

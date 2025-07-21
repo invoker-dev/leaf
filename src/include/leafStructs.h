@@ -2,6 +2,7 @@
 
 #include <VkBootstrap.h>
 #include <glm/ext/vector_float2.hpp>
+#include <glm/ext/vector_float4.hpp>
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
@@ -12,8 +13,8 @@ struct AllocatedImage {
   VkImage       image;
   VkImageView   imageView;
   VmaAllocation allocation;
-  VkExtent3D    imageExtent;
-  VkFormat      imageFormat;
+  VkExtent3D    extent;
+  VkFormat      format;
 };
 
 struct FrameData {
@@ -59,6 +60,7 @@ struct GPUMeshBuffers {
 
 struct VertPushData {
   glm::mat4       model;
+  glm::vec4 color;
   VkDeviceAddress vertexBufferAddress;
 };
 

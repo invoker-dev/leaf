@@ -18,7 +18,7 @@ public:
   void disableMultiSampling();
   void disableBlending();
   void setColorAttachmentFormat(VkFormat format);
-  void disableDepthTest();
+  void setDepthTest(bool mode);
 
 private:
   vkb::DispatchTable dispatch;
