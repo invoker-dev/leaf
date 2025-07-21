@@ -80,8 +80,6 @@ VkShaderModule loadShaderModule(const std::string& fileName,
   if (!file.is_open()) {
     fmt::println("could not open file");
     fmt::println("path:{}", path);
-
-
     return nullptr;
   }
 
@@ -90,9 +88,7 @@ VkShaderModule loadShaderModule(const std::string& fileName,
   std::vector<uint32_t> buffer(fileSize / sizeof(uint32_t));
 
   file.seekg(0);
-
   file.read((char*)buffer.data(), fileSize);
-
   file.close();
 
   VkShaderModuleCreateInfo info = {};

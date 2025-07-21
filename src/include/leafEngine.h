@@ -14,9 +14,9 @@
 #include <vulkan/vulkan_core.h>
 #include <vulkanDestroyer.h>
 
-constexpr bool useValidationLayers = true;
+constexpr bool     useValidationLayers = true;
+constexpr uint32_t framesInFlight      = 3;
 
-constexpr uint32_t framesInFlight = 3;
 namespace LeafEngine {
 
 struct VulkanCore {
@@ -46,7 +46,7 @@ struct VulkanSwapchain {
   VkExtent2D               extent;
 };
 
-struct RenderData {
+struct VulkanRenderData {
 
   // std::vector<VkFramebuffer>   frameBuffers;
   FrameData                    frames[framesInFlight];
@@ -64,28 +64,28 @@ struct RenderData {
   glm::vec4 backgroundColor;
 };
 
-struct Engine {
-  VulkanCore      core;
-  VulkanSurface   surface;
-  VulkanSwapchain swapchain;
-  RenderData      renderData;
+class Engine {
+public:
+  Engine();
+  ~Engine();
+
+  void draw();
+  void update();
+  void processEvent(SDL_Event& e);
+
+  VulkanCore       core;
+  VulkanSurface    surface;
+  VulkanSwapchain  swapchain;
+  VulkanRenderData renderData;
 
   VulkanDestroyer vulkanDestroyer;
-
-  Camera camera;
 
   ImmediateData immediateData;
   ImguiContext  imguiContext;
 
-  AllocatedBuffer cameraUniformBuffer;
+  Camera camera;
 
-  CubeSystem::System& cubeSystem = CubeSystem::get();
-
-  void init();
-  void destroy();
-  void draw();
-  void update();
-  void processEvent(SDL_Event& e);
+  CubeSystem cubeSystem;
 
   void createSDLWindow();
   void initVulkan();
@@ -116,10 +116,5 @@ struct Engine {
     return renderData.frames[renderData.frameNumber % framesInFlight];
   }
 };
-
-inline Engine& get() {
-  static Engine instance;
-  return instance;
-}
 
 } // namespace LeafEngine

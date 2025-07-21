@@ -2,14 +2,14 @@
 #include "VkBootstrapDispatch.h"
 #include <VkBootstrap.h>
 
+#include <fmt/base.h>
 #include <fmt/core.h>
 #include <vulkan/vk_enum_string_helper.h>
 inline void vkAssert(VkResult result) {
   if (result == VK_SUBOPTIMAL_KHR) {
-    // do nothing, for now. Should recreate swapchain
-    // only a problem on X11
+    // fmt::println("suboptimal: {}", string_VkResult(result));
   } else if (result != VK_SUCCESS) {
-    fmt::print("Detected Vulkan error: {}\n", string_VkResult(result));
+    fmt::println("Detected Vulkan error: {}", string_VkResult(result));
     std::abort();
   }
 }

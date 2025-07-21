@@ -6,8 +6,6 @@
 #include <vector>
 #include <vulkan/vulkan_core.h>
 
-namespace CubeSystem {
-
 struct MeshGeometry {
   std::vector<Vertex>   vertices;
   std::vector<uint32_t> indices;
@@ -26,21 +24,14 @@ struct InstanceData {
   uint32_t               count = 0;
 };
 
-struct System {
+class CubeSystem {
+public:
+  CubeSystem();
+  void addCubes(uint32_t count);
+
   InstanceData data;
   MeshGeometry mesh;
   uint32_t     maxInstances;
   uint32_t     initialCubeAmount;
   uint32_t     initialSeed = 0;
-
-  void init();
-  void destroy();
-  void addCubes(uint32_t count);
-  void render();
 };
-
-inline System& get() {
-  static System cubeSystem;
-  return cubeSystem;
-}
-} // namespace CubeSystem

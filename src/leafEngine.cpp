@@ -32,7 +32,7 @@
 
 namespace LeafEngine {
 
-void Engine::init() {
+Engine::Engine() {
 
   core       = {};
   swapchain  = {};
@@ -58,7 +58,7 @@ void Engine::init() {
   initCubes();
   initMesh();
 };
-void Engine::destroy() {
+Engine::~Engine() {
 
   vkAssert(core.dispatch.deviceWaitIdle());
 
@@ -69,7 +69,6 @@ void Engine::destroy() {
   ImGui::DestroyContext();
 
   vulkanDestroyer.flush(core.dispatch, core.allocator);
-
   vmaDestroyAllocator(core.allocator);
   vkb::destroy_swapchain(swapchain.vkbSwapchain);
   vkb::destroy_device(core.device);
@@ -427,18 +426,18 @@ void Engine::initPipeline() {
   vkAssert(core.dispatch.createPipelineLayout(&pipelineLayoutInfo, nullptr,
                                               &renderData.pipelineLayout));
 
-  PipelineBuilder pipelineBuilder = PipelineBuilder(core.dispatch);
-  pipelineBuilder.setLayout(renderData.pipelineLayout);
-  pipelineBuilder.setShaders(vertexShader, fragmentShader);
-  pipelineBuilder.setInputTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-  pipelineBuilder.setPolygonMode(VK_POLYGON_MODE_FILL);
-  // pipelineBuilder.setPolygonMode(VK_POLYGON_MODE_LINE);
-  pipelineBuilder.setCullMode(VK_CULL_MODE_BACK_BIT,
-                              VK_FRONT_FACE_COUNTER_CLOCKWISE);
-  pipelineBuilder.disableMultiSampling();
-  pipelineBuilder.disableBlending();
-  pipelineBuilder.setDepthTest(false);
-  pipelineBuilder.setColorAttachmentFormat(renderData.drawImage.format);
+  PipelineBuilder pipelineBuilder =
+      PipelineBuilder(core.dispatch)
+          .setLayout(renderData.pipelineLayout)
+          .setShaders(vertexShader, fragmentShader)
+          .setInputTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
+          .setPolygonMode(VK_POLYGON_MODE_FILL)
+          // .setPolygonMode(VK_POLYGON_MODE_LINE) // wireframe
+          .setCullMode(VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE)
+          .disableMultiSampling()
+          .disableBlending()
+          .setDepthTest(true)
+          .setColorAttachmentFormat(renderData.drawImage.format);
 
   renderData.pipeline = pipelineBuilder.build();
 
@@ -518,10 +517,6 @@ void Engine::draw() {
   leafUtil::transitionImage(cmd, renderData.drawImage.image,
                             VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
-  // leafUtil::transitionImage(cmd, renderData.depthImage.image,
-  //                           VK_IMAGE_LAYOUT_UNDEFINED,
-  //                           VK_IMAGE_LAYOUT_GENERAL);
-  //
   drawBackground(cmd);
 
   leafUtil::transitionImage(cmd, renderData.drawImage.image,
@@ -694,8 +689,9 @@ void Engine::drawGeometry(VkCommandBuffer cmd, uint32_t swapchainImageIndex) {
                                    vertPushInfo.stageFlags, vertPushInfo.offset,
                                    vertPushInfo.size, vertPushInfo.pValues);
 
+    // Old push data for colors
     // FragPushData fragColor = {cubeSystem.data.colors[i]};
-
+    //
     // constexpr size_t    fragOffset   = (sizeof(VertPushData) + 15) & ~15;
     // VkPushConstantsInfo fragPushInfo = {};
     // fragPushInfo.sType               = VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO;
@@ -704,7 +700,7 @@ void Engine::drawGeometry(VkCommandBuffer cmd, uint32_t swapchainImageIndex) {
     // fragPushInfo.offset              = fragOffset;
     // fragPushInfo.size                = sizeof(FragPushData);
     // fragPushInfo.pValues             = &fragColor;
-
+    //
     // core.dispatch.cmdPushConstants(cmd, fragPushInfo.layout,
     //                                fragPushInfo.stageFlags,
     //                                fragPushInfo.offset, fragPushInfo.size,
@@ -766,9 +762,9 @@ GPUMeshBuffers Engine::uploadMesh(std::span<uint32_t> indices,
                                            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                                            VMA_MEMORY_USAGE_CPU_ONLY);
 
-  void* data = staging.allocation->GetMappedData();
+  auto data = static_cast<uint8_t*>(staging.allocation->GetMappedData());
   memcpy(data, vertices.data(), vertexBufferSize);
-  memcpy((char*)data + vertexBufferSize, indices.data(), indexBufferSize);
+  memcpy(data + vertexBufferSize, indices.data(), indexBufferSize);
 
   // immediate submit
   vkAssert(core.dispatch.resetFences(1, &immediateData.fence));
@@ -921,7 +917,7 @@ void Engine::initDescriptorSets() {
   }
 }
 
-void Engine::initCubes() { cubeSystem.init(); }
+void Engine::initCubes() { cubeSystem = {}; }
 
 void Engine::initDepthTest() {
 

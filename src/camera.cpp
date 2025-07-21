@@ -18,6 +18,7 @@
 #include <glm/matrix.hpp>
 #include <glm/trigonometric.hpp>
 #include <leafStructs.h>
+
 void Camera::update() {
 
   glm::mat4 cameraRotation = getRotationMatrix();

@@ -2,6 +2,7 @@
 #include "VkBootstrapDispatch.h"
 #include <VkBootstrap.h>
 #include <leafStructs.h>
+
 class VulkanDestroyer { // DOOM!
 public:
   void addImage(AllocatedImage image);
@@ -14,7 +15,7 @@ public:
   void addPipeline(VkPipeline pipeline);
   void addPipelineLayout(VkPipelineLayout pipelineLayout);
 
-  void flush(vkb::DispatchTable dispatch, VmaAllocator allocator);
+  void flush(vkb::DispatchTable const& dispatch, VmaAllocator allocator);
 
 private:
   std::vector<AllocatedImage>        images;

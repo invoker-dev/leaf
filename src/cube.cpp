@@ -11,7 +11,6 @@
 #include <random>
 #include <xmmintrin.h>
 
-namespace CubeSystem {
 
 // Random Number Generator from
 // pcg-random.org
@@ -22,7 +21,7 @@ inline float pcg64(uint32_t state) {
   return static_cast<float>(result >> 32) * (1.0f / 4294967296.0f);
 }
 
-void System::init() {
+CubeSystem::CubeSystem() {
 
   initialCubeAmount = 2 << 8;
   data.positions.reserve(initialCubeAmount);
@@ -86,8 +85,7 @@ void System::init() {
                   4, 5, 1, 1, 0, 4};
 };
 
-void System::destroy() {};
-void System::addCubes(uint32_t count) {
+void CubeSystem::addCubes(uint32_t count) {
   size_t   startIndex = data.positions.size();
   uint64_t seedCounter;
 
@@ -102,8 +100,6 @@ void System::addCubes(uint32_t count) {
   data.scales.resize(startIndex + count);
   data.colors.resize(startIndex + count);
   data.modelMatrices.resize(startIndex + count);
-
-  fmt::println("random: {}", pcg64(seedCounter));
 
   for (size_t i = startIndex; i < startIndex + count; i++) {
     data.positions[i].x = pcg64(seedCounter++) * 25.f - 10.f;
@@ -152,4 +148,3 @@ void System::addCubes(uint32_t count) {
   //                data.positions[i].y, data.positions[i].z);
   // }
 };
-} // namespace CubeSystem

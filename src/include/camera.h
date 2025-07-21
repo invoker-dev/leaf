@@ -1,9 +1,9 @@
 #include <SDL3/SDL_events.h>
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/ext/vector_float3.hpp>
-#include <glm/vec3.hpp>>
-class Camera {
-public:
+#include <glm/vec3.hpp>
+
+struct Camera {
   Camera() {
     position    = glm::vec3(0);
     velocity    = glm::vec3(0);

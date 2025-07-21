@@ -29,7 +29,7 @@ void VulkanDestroyer::addPipeline(VkPipeline pipeline) {
 void VulkanDestroyer::addPipelineLayout(VkPipelineLayout pipelineLayout) {
   pipelineLayouts.push_back(pipelineLayout);
 }
-void VulkanDestroyer::flush(vkb::DispatchTable dispatch,
+void VulkanDestroyer::flush(vkb::DispatchTable const& dispatch,
                             VmaAllocator       allocator) {
 
   for (auto p : commandPools) {

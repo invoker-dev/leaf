@@ -8,18 +8,22 @@
 #include <fmt/core.h>
 #include <leafEngine.h>
 
+LeafEngine::Engine* engine;
 // init
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
 
-  LeafEngine::get().init();
-
+  engine = new LeafEngine::Engine{};
   return SDL_APP_CONTINUE;
 }
 // input
 SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
 
   ImGui_ImplSDL3_ProcessEvent(event);
-  LeafEngine::get().processEvent(*event);
+  engine->processEvent(*event);
+
+  if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+    engine->cubeSystem.addCubes(5);
+  }
 
   if (event->type == SDL_EVENT_QUIT) {
     return SDL_APP_SUCCESS; /* end the program, reporting success to the OS. */
@@ -30,13 +34,11 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
 // update
 SDL_AppResult SDL_AppIterate(void* appstate) {
 
-  LeafEngine::get().update();
-  LeafEngine::get().draw();
+  engine->update();
+  engine->draw();
 
   return SDL_APP_CONTINUE;
 }
 
 // cleanup
-void SDL_AppQuit(void* appstate, SDL_AppResult result) {
-  LeafEngine::get().destroy();
-}
+void SDL_AppQuit(void* appstate, SDL_AppResult result) { delete engine; }
