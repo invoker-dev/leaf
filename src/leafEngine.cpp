@@ -6,6 +6,7 @@
 // TODO: Normal maps
 // TODO: Various Post processing
 // CONTINOUS TODO: Real Architecture
+// TODO: FIX SYNCHRONIZATION
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_gpu.h>
@@ -15,6 +16,7 @@
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
 #include <VkBootstrap.h>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -33,6 +35,7 @@
 #include <leafStructs.h>
 #include <leafUtil.h>
 #include <pipelineBuilder.h>
+#include <utility>
 #include <vector>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_wayland.h>
@@ -54,7 +57,6 @@ Engine::Engine() {
   initSwapchain();
   initCommands();
   initSynchronization();
-  initDepthTest();
   initDescriptorLayout();
   initDescriptorPool();
 
@@ -214,7 +216,7 @@ void Engine::createSwapchain(uint32_t width, uint32_t height) {
           .set_desired_format(VkSurfaceFormatKHR{
               .format     = swapchain.imageFormat,
               .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
-          .set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR)
+          .set_desired_present_mode(VK_PRESENT_MODE_MAILBOX_KHR)
           .set_desired_min_image_count(framesInFlight)
           .set_desired_extent(width, height)
           .add_image_usage_flags(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
@@ -230,6 +232,8 @@ void Engine::createSwapchain(uint32_t width, uint32_t height) {
   swapchain.imageViews   = swapchain.vkbSwapchain.get_image_views().value();
   swapchain.images       = swapchain.vkbSwapchain.get_images().value();
   swapchain.extent       = swapchain.vkbSwapchain.extent;
+
+  initSynchronization();
 }
 void Engine::initSwapchain() {
 
@@ -355,18 +359,26 @@ void Engine::initSynchronization() {
   semaphoreInfo.sType                 = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
   semaphoreInfo.flags                 = 0;
 
+  uint32_t imageCount = swapchain.vkbSwapchain.image_count;
+  renderData.renderFinishedSemaphores.resize(imageCount);
+
   for (size_t i = 0; i < framesInFlight; i++) {
     vkAssert(core.dispatch.createFence(&fenceInfo, nullptr,
                                        &renderData.frames[i].renderFence));
-
-    vkAssert(core.dispatch.createSemaphore(
-        &semaphoreInfo, nullptr, &renderData.frames[i].renderSemaphore));
-    vkAssert(core.dispatch.createSemaphore(
-        &semaphoreInfo, nullptr, &renderData.frames[i].swapchainSemaphore));
-
     vulkanDestroyer.addFence(renderData.frames[i].renderFence);
-    vulkanDestroyer.addSemaphore(renderData.frames[i].renderSemaphore);
-    vulkanDestroyer.addSemaphore(renderData.frames[i].swapchainSemaphore);
+
+    vkAssert(core.dispatch.createSemaphore(
+        &semaphoreInfo, nullptr, &renderData.frames[i].imageAvailableSemaphore));
+
+    vulkanDestroyer.addSemaphore(renderData.frames[i].imageAvailableSemaphore);
+  }
+
+  for (size_t i = 0; i < imageCount; i++) {
+
+    vkAssert(core.dispatch.createSemaphore(
+        &semaphoreInfo, nullptr, &renderData.renderFinishedSemaphores[i]));
+
+    vulkanDestroyer.addSemaphore(renderData.renderFinishedSemaphores[i]);
   }
 
   vkAssert(
@@ -534,21 +546,13 @@ void Engine::draw() {
   // wait for GPU to finish work
   vkAssert(core.dispatch.waitForFences(1, &getCurrentFrame().renderFence, true,
                                        1'000'000'000));
-  vkAssert(core.dispatch.resetFences(1, &getCurrentFrame().renderFence));
-
-  renderData.drawExtent.width =
-      std::min(swapchain.extent.width, renderData.drawImage.extent.height) *
-      renderData.renderScale;
-  renderData.drawExtent.height =
-      std::min(swapchain.extent.height, renderData.drawImage.extent.height) *
-      renderData.renderScale;
 
   uint32_t                  swapchainImageIndex;
   VkAcquireNextImageInfoKHR acquireInfo = {};
   acquireInfo.sType      = VK_STRUCTURE_TYPE_ACQUIRE_NEXT_IMAGE_INFO_KHR;
   acquireInfo.swapchain  = swapchain.vkbSwapchain;
   acquireInfo.timeout    = 1'000'000'000; // 1 second
-  acquireInfo.semaphore  = getCurrentFrame().swapchainSemaphore;
+  acquireInfo.semaphore  = getCurrentFrame().imageAvailableSemaphore;
   acquireInfo.fence      = nullptr;
   acquireInfo.deviceMask = 0x1;
 
@@ -558,6 +562,15 @@ void Engine::draw() {
     swapchain.resize = true;
     return;
   }
+
+  vkAssert(core.dispatch.resetFences(1, &getCurrentFrame().renderFence));
+
+  renderData.drawExtent.width =
+      std::min(swapchain.extent.width, renderData.drawImage.extent.height) *
+      renderData.renderScale;
+  renderData.drawExtent.height =
+      std::min(swapchain.extent.height, renderData.drawImage.extent.height) *
+      renderData.renderScale;
 
   VkCommandBuffer cmd = getCurrentFrame().commandBuffer;
   vkAssert(core.dispatch.resetCommandBuffer(cmd, 0));
@@ -613,14 +626,14 @@ void Engine::draw() {
 
   VkSemaphoreSubmitInfo waitInfo = {};
   waitInfo.sType                 = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-  waitInfo.semaphore             = getCurrentFrame().swapchainSemaphore;
-  waitInfo.value                 = 1;
+  waitInfo.semaphore             = getCurrentFrame().imageAvailableSemaphore;
+  waitInfo.value                 = 0;
   waitInfo.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR;
 
   VkSemaphoreSubmitInfo signalInfo = {};
   signalInfo.sType                 = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-  signalInfo.semaphore             = getCurrentFrame().renderSemaphore;
-  signalInfo.value                 = 1;
+  signalInfo.semaphore             = renderData.renderFinishedSemaphores[swapchainImageIndex];
+  signalInfo.value                 = 0;
   signalInfo.stageMask             = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
 
   VkSubmitInfo2 submit            = {};
@@ -640,7 +653,7 @@ void Engine::draw() {
   presentInfo.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
   presentInfo.pSwapchains        = &swapchain.vkbSwapchain.swapchain;
   presentInfo.swapchainCount     = 1;
-  presentInfo.pWaitSemaphores    = &getCurrentFrame().renderSemaphore;
+  presentInfo.pWaitSemaphores    = &renderData.renderFinishedSemaphores[swapchainImageIndex];
   presentInfo.waitSemaphoreCount = 1;
   presentInfo.pImageIndices      = &swapchainImageIndex;
 
@@ -1000,8 +1013,6 @@ void Engine::initDescriptorSets() {
 }
 
 void Engine::initCubes() { cubeSystem = {}; }
-
-void Engine::initDepthTest() {}
 
 void Engine::resizeSwapchain(uint32_t width, uint32_t height) {
   core.dispatch.deviceWaitIdle();

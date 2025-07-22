@@ -20,8 +20,8 @@ struct AllocatedImage {
 struct FrameData {
   VkCommandPool   commandPool;
   VkCommandBuffer commandBuffer;
-  VkSemaphore     swapchainSemaphore, renderSemaphore;
   VkFence         renderFence;
+  VkSemaphore     imageAvailableSemaphore;
 };
 
 struct ImmediateData {
@@ -60,7 +60,7 @@ struct GPUMeshBuffers {
 
 struct VertPushData {
   glm::mat4       model;
-  glm::vec4 color;
+  glm::vec4       color;
   VkDeviceAddress vertexBufferAddress;
 };
 

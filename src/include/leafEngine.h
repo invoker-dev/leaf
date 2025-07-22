@@ -51,7 +51,6 @@ struct VulkanSwapchain {
 
 struct VulkanRenderData {
 
-  // std::vector<VkFramebuffer>   frameBuffers;
   FrameData                    frames[framesInFlight];
   uint64_t                     frameNumber;
   AllocatedImage               drawImage;
@@ -64,6 +63,7 @@ struct VulkanRenderData {
   std::vector<AllocatedBuffer> cameraBuffers;
   VkPipeline                   pipeline;
   VkPipelineLayout             pipelineLayout;
+  std::vector<VkSemaphore> renderFinishedSemaphores;
 
   glm::vec4 backgroundColor;
 };
@@ -97,7 +97,6 @@ public:
   void initSwapchain();
   void initCommands();
   void initSynchronization();
-  void initDepthTest();
   void initDescriptorLayout();
   void initDescriptorPool();
   void initDescriptorSets();

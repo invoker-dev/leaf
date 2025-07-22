@@ -33,6 +33,7 @@ CubeSystem::CubeSystem() {
   addCubes(initialCubeAmount);
 
   mesh.vertices = std::vector<Vertex>(8);
+
   // Positions
   mesh.vertices[0].position = {-0.5f, -0.5f, 0.5f};
   mesh.vertices[1].position = {0.5f, -0.5f, 0.5f};
