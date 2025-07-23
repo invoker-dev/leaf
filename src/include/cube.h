@@ -4,6 +4,7 @@
 #include <glm/ext/vector_float3.hpp>
 #include <glm/ext/vector_float4.hpp>
 #include <vector>
+#include <random>
 #include <vulkan/vulkan_core.h>
 
 struct MeshGeometry {
@@ -31,6 +32,9 @@ public:
 
   InstanceData data;
   MeshGeometry mesh;
+  std::mt19937 random;
+;
+
   uint32_t     maxInstances;
   uint32_t     initialCubeAmount;
   uint32_t     initialSeed = 0;

@@ -11,19 +11,11 @@
 #include <random>
 #include <xmmintrin.h>
 
-
-// Random Number Generator from
-// pcg-random.org
-inline float pcg64(uint32_t state) {
-  uint64_t word =
-      ((state >> ((state >> 59u) + 5u)) ^ state) * 12605985483714917081ull;
-  uint64_t result = ((word >> 43u) ^ word);
-  return static_cast<float>(result >> 32) * (1.0f / 4294967296.0f);
-}
-
 CubeSystem::CubeSystem() {
 
-  initialCubeAmount = 2 << 8;
+  random = std::mt19937(std::random_device{}());
+
+  initialCubeAmount = 2 << 9;
   data.positions.reserve(initialCubeAmount);
   data.rotations.reserve(initialCubeAmount);
   data.scales.reserve(initialCubeAmount);
@@ -87,14 +79,10 @@ CubeSystem::CubeSystem() {
 };
 
 void CubeSystem::addCubes(uint32_t count) {
-  size_t   startIndex = data.positions.size();
-  uint64_t seedCounter;
 
-  if (initialSeed == 0) {
-    seedCounter = std::random_device{}();
-  } else {
-    seedCounter = initialSeed;
-  }
+  size_t startIndex = data.positions.size();
+
+  std::uniform_real_distribution<> dist(0, 1);
 
   data.positions.resize(startIndex + count);
   data.rotations.resize(startIndex + count);
@@ -103,29 +91,29 @@ void CubeSystem::addCubes(uint32_t count) {
   data.modelMatrices.resize(startIndex + count);
 
   for (size_t i = startIndex; i < startIndex + count; i++) {
-    data.positions[i].x = pcg64(seedCounter++) * 25.f - 10.f;
-    data.positions[i].y = pcg64(seedCounter++) * 25.f - 10.f;
-    data.positions[i].z = pcg64(seedCounter++) * 25.f - 10.f;
+    data.positions[i].x = dist(random) * 25.f - 10.f;
+    data.positions[i].y = dist(random) * 25.f - 10.f;
+    data.positions[i].z = dist(random) * 25.f - 10.f;
   }
 
   float pi = glm::pi<float>();
   for (size_t i = startIndex; i < startIndex + count; i++) {
-    data.rotations[i].x = pcg64(seedCounter++) * 2 * pi;
-    data.rotations[i].y = pcg64(seedCounter++) * 2 * pi;
-    data.rotations[i].z = pcg64(seedCounter++) * 2 * pi;
+    data.rotations[i].x = dist(random) * 2 * pi;
+    data.rotations[i].y = dist(random) * 2 * pi;
+    data.rotations[i].z = dist(random) * 2 * pi;
   }
 
   for (size_t i = startIndex; i < startIndex + count; i++) {
-    data.scales[i].x = pcg64(seedCounter++) * 4.f + 0.5f;
-    data.scales[i].y = pcg64(seedCounter++) * 4.f + 0.5f;
-    data.scales[i].z = pcg64(seedCounter++) * 4.f + 0.5f;
+    data.scales[i].x = dist(random) * 4.f + 0.5f;
+    data.scales[i].y = dist(random) * 4.f + 0.5f;
+    data.scales[i].z = dist(random) * 4.f + 0.5f;
   }
 
   for (size_t i = startIndex; i < startIndex + count; i++) {
     size_t index;
-    data.colors[i].r = pcg64(seedCounter++);
-    data.colors[i].g = pcg64(seedCounter++);
-    data.colors[i].b = pcg64(seedCounter++);
+    data.colors[i].r = dist(random);
+    data.colors[i].g = dist(random);
+    data.colors[i].b = dist(random);
     data.colors[i].a = 1.0f;
   }
 

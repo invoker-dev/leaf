@@ -6,7 +6,6 @@
 // TODO: Normal maps
 // TODO: Various Post processing
 // CONTINOUS TODO: Real Architecture
-// TODO: FIX SYNCHRONIZATION
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_gpu.h>
@@ -35,7 +34,6 @@
 #include <leafStructs.h>
 #include <leafUtil.h>
 #include <pipelineBuilder.h>
-#include <utility>
 #include <vector>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_wayland.h>
@@ -368,7 +366,8 @@ void Engine::initSynchronization() {
     vulkanDestroyer.addFence(renderData.frames[i].renderFence);
 
     vkAssert(core.dispatch.createSemaphore(
-        &semaphoreInfo, nullptr, &renderData.frames[i].imageAvailableSemaphore));
+        &semaphoreInfo, nullptr,
+        &renderData.frames[i].imageAvailableSemaphore));
 
     vulkanDestroyer.addSemaphore(renderData.frames[i].imageAvailableSemaphore);
   }
@@ -632,9 +631,10 @@ void Engine::draw() {
 
   VkSemaphoreSubmitInfo signalInfo = {};
   signalInfo.sType                 = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-  signalInfo.semaphore             = renderData.renderFinishedSemaphores[swapchainImageIndex];
-  signalInfo.value                 = 0;
-  signalInfo.stageMask             = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
+  signalInfo.semaphore =
+      renderData.renderFinishedSemaphores[swapchainImageIndex];
+  signalInfo.value     = 0;
+  signalInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
 
   VkSubmitInfo2 submit            = {};
   submit.sType                    = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
@@ -649,11 +649,12 @@ void Engine::draw() {
                                       getCurrentFrame().renderFence));
 
   // prepare present
-  VkPresentInfoKHR presentInfo   = {};
-  presentInfo.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-  presentInfo.pSwapchains        = &swapchain.vkbSwapchain.swapchain;
-  presentInfo.swapchainCount     = 1;
-  presentInfo.pWaitSemaphores    = &renderData.renderFinishedSemaphores[swapchainImageIndex];
+  VkPresentInfoKHR presentInfo = {};
+  presentInfo.sType            = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+  presentInfo.pSwapchains      = &swapchain.vkbSwapchain.swapchain;
+  presentInfo.swapchainCount   = 1;
+  presentInfo.pWaitSemaphores =
+      &renderData.renderFinishedSemaphores[swapchainImageIndex];
   presentInfo.waitSemaphoreCount = 1;
   presentInfo.pImageIndices      = &swapchainImageIndex;
 
@@ -906,6 +907,12 @@ void Engine::initMesh() {
 
 void Engine::processEvent(SDL_Event& e) {
 
+  ImGui_ImplSDL3_ProcessEvent(&e);
+
+  if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+    cubeSystem.addCubes(5);
+  }
+
   if (e.type == SDL_EVENT_KEY_DOWN) {
     if (e.key.scancode == SDL_SCANCODE_ESCAPE) {
       surface.captureMouse = !surface.captureMouse;
@@ -971,7 +978,6 @@ void Engine::initCamera() {
   camera.speed  = 0.2;
 
   camera.aspectRatio = swapchain.extent.width / (float)swapchain.extent.height;
-  fmt::println("Asp; {}", camera.aspectRatio);
   renderData.cameraBuffers = std::vector<AllocatedBuffer>(framesInFlight);
   for (size_t i = 0; i < framesInFlight; i++) {
     renderData.cameraBuffers[i] =

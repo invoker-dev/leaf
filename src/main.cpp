@@ -18,12 +18,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
 // input
 SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
 
-  ImGui_ImplSDL3_ProcessEvent(event);
   engine->processEvent(*event);
-
-  if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-    engine->cubeSystem.addCubes(5);
-  }
 
   if (event->type == SDL_EVENT_QUIT) {
     return SDL_APP_SUCCESS; /* end the program, reporting success to the OS. */
