@@ -1,4 +1,7 @@
-// TODO: Swapchain resizing
+// Actual todo
+// TODO :: glTF loading
+// TODO :: fix the pipelines for multiple shaders
+
 // TODO: Stencil Testing
 // TODO: Blending / transparency
 // TODO: mipmapping, texturesampling
@@ -109,7 +112,7 @@ void Engine::createSDLWindow() {
 
 void Engine::initVulkan() {
 
-  unsigned int count = 0;
+  u32 count = 0;
   SDL_Vulkan_GetInstanceExtensions(&count);
   const char* const*       arr = SDL_Vulkan_GetInstanceExtensions(&count);
   std::vector<const char*> sdlExtensions(arr, arr + count);
@@ -124,7 +127,7 @@ void Engine::initVulkan() {
   builder.set_app_name("leaf")
       .require_api_version(1, 3, 0)
       .use_default_debug_messenger()
-      .request_validation_layers(useValidationLayers)
+      .request_validation_layers(USE_VALIDATION_LAYERS)
       .enable_extensions(sdlExtensions);
 
   auto returnedInstance = builder.build();
@@ -200,7 +203,7 @@ void Engine::getQueues() {
       core.device.get_queue_index(vkb::QueueType::graphics).value();
 }
 
-void Engine::createSwapchain(uint32_t width, uint32_t height) {
+void Engine::createSwapchain(u32 width, u32 height) {
 
   fmt::println("Window size:   [{} {}]", width, height);
 
@@ -215,7 +218,7 @@ void Engine::createSwapchain(uint32_t width, uint32_t height) {
               .format     = swapchain.imageFormat,
               .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
           .set_desired_present_mode(VK_PRESENT_MODE_MAILBOX_KHR)
-          .set_desired_min_image_count(framesInFlight)
+          .set_desired_min_image_count(FRAMES_IN_FLIGHT)
           .set_desired_extent(width, height)
           .add_image_usage_flags(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
           .build();
@@ -237,8 +240,8 @@ void Engine::initSwapchain() {
 
   int width, height;
   SDL_GetWindowSizeInPixels(surface.window, &width, &height);
-  surface.extent = {static_cast<uint32_t>(width),
-                    static_cast<uint32_t>(height)};
+  surface.extent = {static_cast<u32>(width),
+                    static_cast<u32>(height)};
 
   createSwapchain(width, height);
 
@@ -317,7 +320,7 @@ void Engine::initCommands() {
   cmdPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
   cmdPoolInfo.queueFamilyIndex = core.graphicsQueueFamily;
 
-  for (size_t i = 0; i < framesInFlight; i++) {
+  for (size_t i = 0; i < FRAMES_IN_FLIGHT; i++) {
 
     vkAssert(core.dispatch.createCommandPool(
         &cmdPoolInfo, nullptr, &renderData.frames[i].commandPool));
@@ -357,10 +360,10 @@ void Engine::initSynchronization() {
   semaphoreInfo.sType                 = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
   semaphoreInfo.flags                 = 0;
 
-  uint32_t imageCount = swapchain.vkbSwapchain.image_count;
+  u32 imageCount = swapchain.vkbSwapchain.image_count;
   renderData.renderFinishedSemaphores.resize(imageCount);
 
-  for (size_t i = 0; i < framesInFlight; i++) {
+  for (size_t i = 0; i < FRAMES_IN_FLIGHT; i++) {
     vkAssert(core.dispatch.createFence(&fenceInfo, nullptr,
                                        &renderData.frames[i].renderFence));
     vulkanDestroyer.addFence(renderData.frames[i].renderFence);
@@ -413,7 +416,7 @@ void Engine::initImGUI() {
   poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
   poolInfo.flags         = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
   poolInfo.maxSets       = 1000;
-  poolInfo.poolSizeCount = (uint32_t)std::size(pool_sizes);
+  poolInfo.poolSizeCount = (u32)std::size(pool_sizes);
   poolInfo.pPoolSizes    = pool_sizes;
 
   vkAssert(core.dispatch.createDescriptorPool(&poolInfo, nullptr,
@@ -466,7 +469,7 @@ void Engine::initPipeline() {
   pushConstantRanges[0].size       = sizeof(VertPushData);
   pushConstantRanges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
-  // TODO: Fix allignment nicely
+  // align by 16 bytes
   constexpr size_t fragOffset      = (sizeof(VertPushData) + 15) & ~15;
   pushConstantRanges[1].offset     = fragOffset;
   pushConstantRanges[1].size       = sizeof(FragPushData);
@@ -488,8 +491,8 @@ void Engine::initPipeline() {
           .setLayout(renderData.pipelineLayout)
           .setShaders(vertexShader, fragmentShader)
           .setInputTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
-          .setPolygonMode(VK_POLYGON_MODE_FILL)
-          // .setPolygonMode(VK_POLYGON_MODE_LINE) // wireframe
+          // .setPolygonMode(VK_POLYGON_MODE_FILL)
+          .setPolygonMode(VK_POLYGON_MODE_LINE) // wireframe
           .setCullMode(VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE)
           .disableMultiSampling()
           .disableBlending()
@@ -546,7 +549,7 @@ void Engine::draw() {
   vkAssert(core.dispatch.waitForFences(1, &getCurrentFrame().renderFence, true,
                                        1'000'000'000));
 
-  uint32_t                  swapchainImageIndex;
+  u32 swapchainImageIndex;
   VkAcquireNextImageInfoKHR acquireInfo = {};
   acquireInfo.sType      = VK_STRUCTURE_TYPE_ACQUIRE_NEXT_IMAGE_INFO_KHR;
   acquireInfo.swapchain  = swapchain.vkbSwapchain;
@@ -681,7 +684,7 @@ void Engine::drawBackground(VkCommandBuffer cmd) {
                                    &clearRange);
 }
 
-void Engine::drawGeometry(VkCommandBuffer cmd, uint32_t swapchainImageIndex) {
+void Engine::drawGeometry(VkCommandBuffer cmd, u32 swapchainImageIndex) {
   VkRenderingAttachmentInfo colorAttachment = {};
   colorAttachment.sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
   colorAttachment.imageView   = renderData.drawImage.imageView;
@@ -713,14 +716,14 @@ void Engine::drawGeometry(VkCommandBuffer cmd, uint32_t swapchainImageIndex) {
 
   CameraUBO* mapped =
       (CameraUBO*)renderData
-          .cameraBuffers[renderData.frameNumber % framesInFlight]
+          .cameraBuffers[renderData.frameNumber % FRAMES_IN_FLIGHT]
           .allocation->GetMappedData();
   mapped->view       = camera.getViewMatrix();
   mapped->projection = camera.getProjectionMatrix();
 
   core.dispatch.cmdBindDescriptorSets(
       cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, renderData.pipelineLayout, 0, 1,
-      &renderData.descriptorSets[renderData.frameNumber % framesInFlight], 0,
+      &renderData.descriptorSets[renderData.frameNumber % FRAMES_IN_FLIGHT], 0,
       nullptr);
 
   core.dispatch.cmdBindIndexBuffer(cmd, cubeSystem.mesh.getIndexBuffer(), 0,
@@ -808,10 +811,10 @@ AllocatedBuffer Engine::allocateBuffer(size_t             allocSize,
   return newBuffer;
 }
 
-GPUMeshBuffers Engine::uploadMesh(std::span<uint32_t> indices,
+GPUMeshBuffers Engine::uploadMesh(std::span<u32> indices,
                                   std::span<Vertex>   vertices) {
   const size_t   vertexBufferSize = vertices.size() * sizeof(Vertex);
-  const size_t   indexBufferSize  = indices.size() * sizeof(uint32_t);
+  const size_t   indexBufferSize  = indices.size() * sizeof(u32);
   GPUMeshBuffers newSurface;
 
   newSurface.vertexBuffer = allocateBuffer(
@@ -835,7 +838,7 @@ GPUMeshBuffers Engine::uploadMesh(std::span<uint32_t> indices,
                                            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                                            VMA_MEMORY_USAGE_CPU_ONLY);
 
-  auto data = static_cast<uint8_t*>(staging.allocation->GetMappedData());
+  auto data = static_cast<u8*>(staging.allocation->GetMappedData());
   memcpy(data, vertices.data(), vertexBufferSize);
   memcpy(data + vertexBufferSize, indices.data(), indexBufferSize);
 
@@ -892,7 +895,7 @@ GPUMeshBuffers Engine::uploadMesh(std::span<uint32_t> indices,
   vkAssert(core.dispatch.queueSubmit2(core.graphicsQueue, 1, &submit,
                                       immediateData.fence));
   vkAssert(
-      core.dispatch.waitForFences(1, &immediateData.fence, true, UINT64_MAX));
+      core.dispatch.waitForFences(1, &immediateData.fence, true, U64_MAX));
 
   vmaDestroyBuffer(core.allocator, staging.buffer, staging.allocation);
 
@@ -921,12 +924,12 @@ void Engine::processEvent(SDL_Event& e) {
     }
   }
 
-  camera.processSDLEvent(e);
+  camera.handleMouse(e);
 }
 
-void Engine::update() {
+void Engine::update(f64 dt) {
 
-  // engine
+  camera.handleInput();
   int width, height;
   SDL_GetWindowSizeInPixels(surface.window, &width, &height);
   if (width != swapchain.extent.width || height != swapchain.extent.height) {
@@ -934,22 +937,21 @@ void Engine::update() {
     resizeSwapchain(width, height);
   }
 
-  // game
-  camera.update();
+  camera.update(dt);
 }
 
 void Engine::initDescriptorPool() {
 
   VkDescriptorPoolSize poolSizes[] = {{
       .type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-      .descriptorCount = 1 * framesInFlight,
+      .descriptorCount = 1 * FRAMES_IN_FLIGHT,
   }};
 
   VkDescriptorPoolCreateInfo poolInfo = {};
   poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
   poolInfo.poolSizeCount = 1;
   poolInfo.pPoolSizes    = poolSizes;
-  poolInfo.maxSets       = framesInFlight;
+  poolInfo.maxSets       = FRAMES_IN_FLIGHT;
 
   vkAssert(core.dispatch.createDescriptorPool(&poolInfo, nullptr,
                                               &renderData.descriptorPool));
@@ -974,12 +976,11 @@ void Engine::initDescriptorLayout() {
 
 void Engine::initCamera() {
   camera        = Camera{};
-  camera.frames = framesInFlight;
-  camera.speed  = 0.2;
+  camera.frames = FRAMES_IN_FLIGHT;
 
-  camera.aspectRatio = swapchain.extent.width / (float)swapchain.extent.height;
-  renderData.cameraBuffers = std::vector<AllocatedBuffer>(framesInFlight);
-  for (size_t i = 0; i < framesInFlight; i++) {
+  camera.aspectRatio = swapchain.extent.width / (f32)swapchain.extent.height;
+  renderData.cameraBuffers = std::vector<AllocatedBuffer>(FRAMES_IN_FLIGHT);
+  for (size_t i = 0; i < FRAMES_IN_FLIGHT; i++) {
     renderData.cameraBuffers[i] =
         allocateBuffer(sizeof(CameraUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                        VMA_MEMORY_USAGE_CPU_TO_GPU);
@@ -987,19 +988,19 @@ void Engine::initCamera() {
 }
 
 void Engine::initDescriptorSets() {
-  std::vector<VkDescriptorSetLayout> layouts(framesInFlight,
+  std::vector<VkDescriptorSetLayout> layouts(FRAMES_IN_FLIGHT,
                                              renderData.descriptorSetLayout);
   VkDescriptorSetAllocateInfo        allocInfo = {};
   allocInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
   allocInfo.descriptorPool     = renderData.descriptorPool;
-  allocInfo.descriptorSetCount = framesInFlight;
+  allocInfo.descriptorSetCount = FRAMES_IN_FLIGHT;
   allocInfo.pSetLayouts        = layouts.data();
 
-  renderData.descriptorSets.resize(framesInFlight);
+  renderData.descriptorSets.resize(FRAMES_IN_FLIGHT);
   vkAssert(core.dispatch.allocateDescriptorSets(
       &allocInfo, renderData.descriptorSets.data()));
 
-  for (size_t i = 0; i < framesInFlight; i++) {
+  for (size_t i = 0; i < FRAMES_IN_FLIGHT; i++) {
     VkDescriptorBufferInfo cameraBufferInfo{};
     cameraBufferInfo.buffer = renderData.cameraBuffers[i].buffer;
     cameraBufferInfo.offset = 0;
@@ -1020,7 +1021,7 @@ void Engine::initDescriptorSets() {
 
 void Engine::initCubes() { cubeSystem = {}; }
 
-void Engine::resizeSwapchain(uint32_t width, uint32_t height) {
+void Engine::resizeSwapchain(u32 width, u32 height) {
   core.dispatch.deviceWaitIdle();
 
   vkb::destroy_swapchain(swapchain.vkbSwapchain);

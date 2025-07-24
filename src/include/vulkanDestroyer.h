@@ -2,18 +2,19 @@
 #include "VkBootstrapDispatch.h"
 #include <VkBootstrap.h>
 #include <leafStructs.h>
+#include <vector>
 
 class VulkanDestroyer { // DOOM!
 public:
-  void addImage(AllocatedImage image);
-  void addAllocatedBuffer(AllocatedBuffer buffer);
-  void addCommandPool(VkCommandPool pool);
-  void addSemaphore(VkSemaphore semaphore);
-  void addFence(VkFence fence);
-  void addDescriptorPool(VkDescriptorPool pool);
-  void addDescriptorSetLayout(VkDescriptorSetLayout layout);
-  void addPipeline(VkPipeline pipeline);
-  void addPipelineLayout(VkPipelineLayout pipelineLayout);
+  void addImage(AllocatedImage const& image);
+  void addAllocatedBuffer(AllocatedBuffer const& buffer);
+  void addCommandPool(VkCommandPool const& pool);
+  void addSemaphore(VkSemaphore const& semaphore);
+  void addFence(VkFence const& fence);
+  void addDescriptorPool(VkDescriptorPool const& pool);
+  void addDescriptorSetLayout(VkDescriptorSetLayout const& layout);
+  void addPipeline(VkPipeline const& pipeline);
+  void addPipelineLayout(VkPipelineLayout const& pipelineLayout);
 
   void flush(vkb::DispatchTable const& dispatch, VmaAllocator allocator);
 

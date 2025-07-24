@@ -3,14 +3,15 @@
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/ext/vector_float3.hpp>
 #include <glm/ext/vector_float4.hpp>
-#include <vector>
 #include <random>
+#include <types.h>
+#include <vector>
 #include <vulkan/vulkan_core.h>
 
 struct MeshGeometry {
-  std::vector<Vertex>   vertices;
-  std::vector<uint32_t> indices;
-  GPUMeshBuffers        meshBuffers;
+  std::vector<Vertex> vertices;
+  std::vector<u32>    indices;
+  GPUMeshBuffers      meshBuffers;
 
   VkBuffer& getIndexBuffer() { return meshBuffers.indexBuffer.buffer; }
   VkBuffer& getVertexBuffer() { return meshBuffers.vertexBuffer.buffer; }
@@ -22,20 +23,19 @@ struct InstanceData {
   std::vector<glm::vec3> scales;
   std::vector<glm::vec4> colors;
   std::vector<glm::mat4> modelMatrices;
-  uint32_t               count = 0;
+  u32                    count = 0;
 };
 
 class CubeSystem {
 public:
   CubeSystem();
-  void addCubes(uint32_t count);
+  void addCubes(u32 count);
 
   InstanceData data;
   MeshGeometry mesh;
   std::mt19937 random;
-;
 
-  uint32_t     maxInstances;
-  uint32_t     initialCubeAmount;
-  uint32_t     initialSeed = 0;
+  u32 maxInstances;
+  u32 initialCubeAmount;
+  u32 initialSeed = 0;
 };

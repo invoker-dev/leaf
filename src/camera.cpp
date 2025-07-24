@@ -4,6 +4,7 @@
 #include <SDL3/SDL_oldnames.h>
 #include <SDL3/SDL_scancode.h>
 #include <camera.h>
+#include <cstdio>
 #include <fmt/base.h>
 #include <glm/common.hpp>
 #include <glm/ext/matrix_clip_space.hpp>
@@ -19,65 +20,56 @@
 #include <glm/trigonometric.hpp>
 #include <leafStructs.h>
 
-void Camera::update() {
-
-  glm::mat4 cameraRotation = getRotationMatrix();
-  position += glm::vec3(cameraRotation * glm::vec4(velocity * 0.5f, 0.f));
+Camera::Camera() {
+  position    = glm::vec3(0);
+  velocity    = glm::vec3(0);
+  pitch       = 0;
+  yaw         = 0;
+  sensitivity = .001f;
+  frames      = 0;
+  aspectRatio = 0;
+  active      = true;
+  speed       = 100;
+  near        = 0.1f;
+  far         = 10'000.f;
 }
 
-void Camera::processSDLEvent(SDL_Event& e) {
+void Camera::update(f64 dt) {
 
-  SDL_Scancode scancode = e.key.scancode;
+  glm::mat4 cameraRotation = getRotationMatrix();
+  position += glm::vec3(cameraRotation * glm::vec4(velocity * (f32)dt, 0.f));
+}
 
-  if (e.type == SDL_EVENT_KEY_DOWN) {
-    if (scancode == SDL_SCANCODE_W) {
-      velocity.z = -speed;
-    }
-    if (scancode == SDL_SCANCODE_S) {
-      velocity.z = speed;
-    }
-    if (scancode == SDL_SCANCODE_A) {
-      velocity.x = -speed;
-    }
-    if (scancode == SDL_SCANCODE_D) {
-      velocity.x = speed;
-    }
-    if (scancode == SDL_SCANCODE_SPACE) {
-      velocity.y = 0.3;
-    }
-    if (scancode == SDL_SCANCODE_LCTRL) {
-      velocity.y = -0.3;
-    }
-  }
-
-  if (e.type == SDL_EVENT_KEY_UP) {
-    if (scancode == SDL_SCANCODE_W) {
-      velocity.z = 0;
-    }
-    if (scancode == SDL_SCANCODE_S) {
-      velocity.z = 0;
-    }
-    if (scancode == SDL_SCANCODE_A) {
-      velocity.x = 0;
-    }
-    if (scancode == SDL_SCANCODE_D) {
-      velocity.x = 0;
-    }
-    if (scancode == SDL_SCANCODE_SPACE) {
-      velocity.y = 0;
-    }
-    if (scancode == SDL_SCANCODE_LCTRL) {
-      velocity.y = 0;
-    }
-  }
-
+void Camera::handleMouse(SDL_Event& e) {
   if (active) {
     if (e.type == SDL_EVENT_MOUSE_MOTION) {
-      pitch = glm::clamp(pitch - (float)e.motion.yrel * sensitivity,
+      pitch = glm::clamp(pitch - (f32)e.motion.yrel * sensitivity,
                          glm::radians(-90.0f), glm::radians(90.0f));
-      yaw -= (float)e.motion.xrel * sensitivity;
+      yaw -= (f32)e.motion.xrel * sensitivity;
     }
   }
+}
+void Camera::handleInput() {
+
+  const bool* keys  = SDL_GetKeyboardState(NULL);
+  glm::vec3   input = glm::vec3(0.f);
+  if (keys[SDL_SCANCODE_W])
+    input.z -= 1.f;
+  if (keys[SDL_SCANCODE_S])
+    input.z += 1.f;
+  if (keys[SDL_SCANCODE_A])
+    input.x -= 1.f;
+  if (keys[SDL_SCANCODE_D])
+    input.x += 1.f;
+  if (keys[SDL_SCANCODE_SPACE])
+    input.y += 1.f;
+  if (keys[SDL_SCANCODE_LCTRL])
+    input.y -= 1.f;
+
+  if (glm::length(input) > 0.f)
+    input = glm::normalize(input);
+
+  velocity = input * speed;
 }
 
 glm::mat4 Camera::getViewMatrix() {
@@ -93,7 +85,7 @@ glm::mat4 Camera::getRotationMatrix() {
 }
 glm::mat4 Camera::getProjectionMatrix() {
 
-  glm::mat4 p = glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 100.f);
+  glm::mat4 p = glm::perspective(glm::radians(45.0f), aspectRatio, near, far);
   p[1][1]     = -p[1][1];
   return p;
 }

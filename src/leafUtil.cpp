@@ -3,6 +3,7 @@
 #include <fstream>
 #include <leafInit.h>
 #include <leafUtil.h>
+#include <types.h>
 
 namespace leafUtil {
 
@@ -85,7 +86,7 @@ VkShaderModule loadShaderModule(const std::string& fileName,
 
   size_t fileSize = static_cast<size_t>(file.tellg());
 
-  std::vector<uint32_t> buffer(fileSize / sizeof(uint32_t));
+  std::vector<u32> buffer(fileSize / sizeof(u32));
 
   file.seekg(0);
   file.read((char*)buffer.data(), fileSize);
@@ -93,7 +94,7 @@ VkShaderModule loadShaderModule(const std::string& fileName,
 
   VkShaderModuleCreateInfo info = {};
   info.sType                    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-  info.codeSize                 = buffer.size() * sizeof(uint32_t);
+  info.codeSize                 = buffer.size() * sizeof(u32);
   info.pCode                    = buffer.data();
 
   VkShaderModule shaderModule;

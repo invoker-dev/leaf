@@ -15,8 +15,8 @@
 #include <vulkan/vulkan_core.h>
 #include <vulkanDestroyer.h>
 
-constexpr bool     useValidationLayers = true;
-constexpr uint32_t framesInFlight      = 3;
+constexpr bool USE_VALIDATION_LAYERS = true;
+constexpr u32  FRAMES_IN_FLIGHT      = 3;
 
 namespace LeafEngine {
 
@@ -28,7 +28,7 @@ struct VulkanCore {
   vkb::DispatchTable         dispatch;
   VmaAllocator               allocator;
   VkQueue                    graphicsQueue;
-  uint32_t                   graphicsQueueFamily;
+  u32                        graphicsQueueFamily;
 };
 
 struct VulkanSurface {
@@ -51,11 +51,11 @@ struct VulkanSwapchain {
 
 struct VulkanRenderData {
 
-  FrameData                    frames[framesInFlight];
-  uint64_t                     frameNumber;
+  FrameData                    frames[FRAMES_IN_FLIGHT];
+  u64                          frameNumber;
   AllocatedImage               drawImage;
   VkExtent2D                   drawExtent;
-  float                        renderScale = 1.f;
+  f32                          renderScale = 1.f;
   AllocatedImage               depthImage;
   VkDescriptorPool             descriptorPool;
   VkDescriptorSetLayout        descriptorSetLayout;
@@ -63,7 +63,7 @@ struct VulkanRenderData {
   std::vector<AllocatedBuffer> cameraBuffers;
   VkPipeline                   pipeline;
   VkPipelineLayout             pipelineLayout;
-  std::vector<VkSemaphore> renderFinishedSemaphores;
+  std::vector<VkSemaphore>     renderFinishedSemaphores;
 
   glm::vec4 backgroundColor;
 };
@@ -74,8 +74,8 @@ public:
   ~Engine();
 
   void draw();
-  void update();
-  void processEvent(SDL_Event& e);
+  void update(f64 dt);
+  void processEvent(SDL_Event& event);
 
   VulkanCore       core;
   VulkanSurface    surface;
@@ -108,17 +108,16 @@ public:
 
   void drawImGUI(VkCommandBuffer cmd, VkImageView targetImage);
   void drawBackground(VkCommandBuffer cmd);
-  void drawGeometry(VkCommandBuffer cmd, uint32_t imgIndex);
+  void drawGeometry(VkCommandBuffer cmd, u32 imgIndex);
 
-  void            createSwapchain(uint32_t width, uint32_t height);
-  void            resizeSwapchain(uint32_t width, uint32_t height);
+  void            createSwapchain(u32 width, u32 height);
+  void            resizeSwapchain(u32 width, u32 height);
   AllocatedBuffer allocateBuffer(size_t allocSize, VkBufferUsageFlags usage,
                                  VmaMemoryUsage memoryUsage);
-  GPUMeshBuffers  uploadMesh(std::span<uint32_t> indices,
-                             std::span<Vertex>   vertices);
+  GPUMeshBuffers uploadMesh(std::span<u32> indices, std::span<Vertex> vertices);
 
   FrameData& getCurrentFrame() {
-    return renderData.frames[renderData.frameNumber % framesInFlight];
+    return renderData.frames[renderData.frameNumber % FRAMES_IN_FLIGHT];
   }
 };
 

@@ -1,36 +1,42 @@
 #include "VkBootstrapDispatch.h"
 #include <vulkanDestroyer.h>
 
-void VulkanDestroyer::addImage(AllocatedImage image) {
+void VulkanDestroyer::addImage(AllocatedImage const& image) {
   images.push_back(image);
 };
 
-void VulkanDestroyer::addAllocatedBuffer(AllocatedBuffer buffer) { buffers.push_back(buffer); };
-void VulkanDestroyer::addSemaphore(VkSemaphore semaphore) {
+void VulkanDestroyer::addAllocatedBuffer(AllocatedBuffer const& buffer) {
+  buffers.push_back(buffer);
+};
+void VulkanDestroyer::addSemaphore(VkSemaphore const& semaphore) {
   semaphores.push_back(semaphore);
 }
-void VulkanDestroyer::addFence(VkFence fence) { fences.push_back(fence); }
+void VulkanDestroyer::addFence(VkFence const& fence) {
+  fences.push_back(fence);
+}
 
-void VulkanDestroyer::addCommandPool(VkCommandPool pool) {
+void VulkanDestroyer::addCommandPool(VkCommandPool const& pool) {
   commandPools.push_back(pool);
 }
 
-void VulkanDestroyer::addDescriptorPool(VkDescriptorPool pool) {
+void VulkanDestroyer::addDescriptorPool(VkDescriptorPool const& pool) {
   descriptorPools.push_back(pool);
 }
-void VulkanDestroyer::addDescriptorSetLayout(VkDescriptorSetLayout layout) {
+void VulkanDestroyer::addDescriptorSetLayout(
+    VkDescriptorSetLayout const& layout) {
   descriptorSetLayouts.push_back(layout);
 }
 
-void VulkanDestroyer::addPipeline(VkPipeline pipeline) {
+void VulkanDestroyer::addPipeline(VkPipeline const& pipeline) {
   pipelines.push_back(pipeline);
 }
 
-void VulkanDestroyer::addPipelineLayout(VkPipelineLayout pipelineLayout) {
+void VulkanDestroyer::addPipelineLayout(
+    VkPipelineLayout const& pipelineLayout) {
   pipelineLayouts.push_back(pipelineLayout);
 }
 void VulkanDestroyer::flush(vkb::DispatchTable const& dispatch,
-                            VmaAllocator       allocator) {
+                            VmaAllocator              allocator) {
 
   for (auto p : commandPools) {
     dispatch.destroyCommandPool(p, nullptr);

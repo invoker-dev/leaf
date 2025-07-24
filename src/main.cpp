@@ -1,5 +1,6 @@
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_timer.h>
+#include <algorithm>
 #include <fmt/base.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
@@ -7,12 +8,19 @@
 #include <SDL3/SDL_main.h>
 #include <fmt/core.h>
 #include <leafEngine.h>
+#include <types.h>
 
 LeafEngine::Engine* engine;
+
+f64 dt          = 1 / 120.0;
+f64 time        = 0;
+f64 currentTime = SDL_GetPerformanceCounter();
 // init
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
 
   engine = new LeafEngine::Engine{};
+
+  // dt
   return SDL_APP_CONTINUE;
 }
 // input
@@ -26,11 +34,21 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) {
   return SDL_APP_CONTINUE;
 }
 
-
 // update
 SDL_AppResult SDL_AppIterate(void* appstate) {
 
-  engine->update();
+  double newTime =
+      SDL_GetPerformanceCounter() / (double)SDL_GetPerformanceFrequency();
+  double frameTime = newTime - currentTime;
+  currentTime      = newTime;
+
+  while (frameTime > 0) {
+    float deltaTime = std::min(frameTime, dt);
+    engine->update(deltaTime);
+    frameTime -= deltaTime;
+    time += deltaTime;
+  }
+
   engine->draw();
 
   return SDL_APP_CONTINUE;

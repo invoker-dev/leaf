@@ -15,7 +15,8 @@ CubeSystem::CubeSystem() {
 
   random = std::mt19937(std::random_device{}());
 
-  initialCubeAmount = 2 << 9;
+  // initialCubeAmount = 2 << 9;
+  initialCubeAmount = 4;
   data.positions.reserve(initialCubeAmount);
   data.rotations.reserve(initialCubeAmount);
   data.scales.reserve(initialCubeAmount);
@@ -91,12 +92,15 @@ void CubeSystem::addCubes(uint32_t count) {
   data.modelMatrices.resize(startIndex + count);
 
   for (size_t i = startIndex; i < startIndex + count; i++) {
-    data.positions[i].x = dist(random) * 25.f - 10.f;
-    data.positions[i].y = dist(random) * 25.f - 10.f;
-    data.positions[i].z = dist(random) * 25.f - 10.f;
+    data.positions[i].x =
+        dist(random) * initialCubeAmount / ((f32)initialCubeAmount / 2) - 10.f;
+    data.positions[i].y =
+        dist(random) * initialCubeAmount / ((f32)initialCubeAmount / 2) - 10.f;
+    data.positions[i].z =
+        dist(random) * initialCubeAmount / ((f32)initialCubeAmount / 2) - 10.f;
   }
 
-  float pi = glm::pi<float>();
+  f32 pi = glm::pi<f32>();
   for (size_t i = startIndex; i < startIndex + count; i++) {
     data.rotations[i].x = dist(random) * 2 * pi;
     data.rotations[i].y = dist(random) * 2 * pi;
@@ -104,9 +108,12 @@ void CubeSystem::addCubes(uint32_t count) {
   }
 
   for (size_t i = startIndex; i < startIndex + count; i++) {
-    data.scales[i].x = dist(random) * 4.f + 0.5f;
-    data.scales[i].y = dist(random) * 4.f + 0.5f;
-    data.scales[i].z = dist(random) * 4.f + 0.5f;
+    // data.scales[i].x = dist(random) * 4.f + 0.5f;
+    // data.scales[i].y = dist(random) * 4.f + 0.5f;
+    // data.scales[i].z = dist(random) * 4.f + 0.5f;
+    data.scales[i].x = 4.f + 0.5f;
+    data.scales[i].y = 4.f + 0.5f;
+    data.scales[i].z = 4.f + 0.5f;
   }
 
   for (size_t i = startIndex; i < startIndex + count; i++) {
