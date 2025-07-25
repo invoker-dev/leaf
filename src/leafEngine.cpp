@@ -33,9 +33,11 @@
 #include <imgui_impl_vulkan.h>
 #include <iterator>
 #include <leafEngine.h>
+#include <leafGltf.h>
 #include <leafInit.h>
 #include <leafStructs.h>
 #include <leafUtil.h>
+#include <memory>
 #include <pipelineBuilder.h>
 #include <vector>
 #include <vulkan/vulkan_core.h>
@@ -95,7 +97,7 @@ void Engine::createSDLWindow() {
   SDL_WindowFlags sdlFlags =
       (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
 
-  surface.window = SDL_CreateWindow("LeafEngine", 2000, 1500, sdlFlags);
+  surface.window = SDL_CreateWindow("LeafEngine", 1920, 1080, sdlFlags);
   if (!surface.window) {
     fmt::print("failed to init SDL window: {}\n", SDL_GetError());
     std::exit(-1);
@@ -240,8 +242,7 @@ void Engine::initSwapchain() {
 
   int width, height;
   SDL_GetWindowSizeInPixels(surface.window, &width, &height);
-  surface.extent = {static_cast<u32>(width),
-                    static_cast<u32>(height)};
+  surface.extent = {static_cast<u32>(width), static_cast<u32>(height)};
 
   createSwapchain(width, height);
 
@@ -549,7 +550,7 @@ void Engine::draw() {
   vkAssert(core.dispatch.waitForFences(1, &getCurrentFrame().renderFence, true,
                                        1'000'000'000));
 
-  u32 swapchainImageIndex;
+  u32                       swapchainImageIndex;
   VkAcquireNextImageInfoKHR acquireInfo = {};
   acquireInfo.sType      = VK_STRUCTURE_TYPE_ACQUIRE_NEXT_IMAGE_INFO_KHR;
   acquireInfo.swapchain  = swapchain.vkbSwapchain;
@@ -782,7 +783,7 @@ void Engine::drawGeometry(VkCommandBuffer cmd, u32 swapchainImageIndex) {
     //                                fragPushInfo.offset, fragPushInfo.size,
     //                                fragPushInfo.pValues);
 
-    core.dispatch.cmdDrawIndexed(cmd, 36, 1, 0, 0, 0);
+    core.dispatch.cmdDrawIndexed(cmd, cubeSystem.mesh.surfaces[0].count, 1, cubeSystem.mesh.surfaces[0].startIndex, 0, 0);
   }
 
   core.dispatch.cmdEndRendering(cmd);
@@ -811,8 +812,8 @@ AllocatedBuffer Engine::allocateBuffer(size_t             allocSize,
   return newBuffer;
 }
 
-GPUMeshBuffers Engine::uploadMesh(std::span<u32> indices,
-                                  std::span<Vertex>   vertices) {
+GPUMeshBuffers Engine::uploadMesh(std::span<u32>    indices,
+                                  std::span<Vertex> vertices) {
   const size_t   vertexBufferSize = vertices.size() * sizeof(Vertex);
   const size_t   indexBufferSize  = indices.size() * sizeof(u32);
   GPUMeshBuffers newSurface;
@@ -894,8 +895,7 @@ GPUMeshBuffers Engine::uploadMesh(std::span<u32> indices,
 
   vkAssert(core.dispatch.queueSubmit2(core.graphicsQueue, 1, &submit,
                                       immediateData.fence));
-  vkAssert(
-      core.dispatch.waitForFences(1, &immediateData.fence, true, U64_MAX));
+  vkAssert(core.dispatch.waitForFences(1, &immediateData.fence, true, U64_MAX));
 
   vmaDestroyBuffer(core.allocator, staging.buffer, staging.allocation);
 
@@ -904,8 +904,19 @@ GPUMeshBuffers Engine::uploadMesh(std::span<u32> indices,
 
 void Engine::initMesh() {
 
-  cubeSystem.mesh.meshBuffers =
-      uploadMesh(cubeSystem.mesh.indices, cubeSystem.mesh.vertices);
+  // cubeSystem.mesh.meshBuffers =
+  //     uploadMesh(cubeSystem.mesh.indices, cubeSystem.mesh.vertices);
+
+  std::vector<std::shared_ptr<MeshAsset>> meshAssets =
+      leafGltf::loadGltfMeshes("assets/teapot.gltf").value();
+
+  GPUMeshBuffers gltfMesh =
+      uploadMesh(meshAssets[0]->indices, meshAssets[0]->vertices);
+
+  // TODO: fix this shit
+  cubeSystem.mesh = *meshAssets.at(0).get();
+  cubeSystem.mesh.meshBuffers = gltfMesh;
+
 }
 
 void Engine::processEvent(SDL_Event& e) {

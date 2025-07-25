@@ -8,15 +8,6 @@
 #include <vector>
 #include <vulkan/vulkan_core.h>
 
-struct MeshGeometry {
-  std::vector<Vertex> vertices;
-  std::vector<u32>    indices;
-  GPUMeshBuffers      meshBuffers;
-
-  VkBuffer& getIndexBuffer() { return meshBuffers.indexBuffer.buffer; }
-  VkBuffer& getVertexBuffer() { return meshBuffers.vertexBuffer.buffer; }
-};
-
 struct InstanceData {
   std::vector<glm::vec3> positions;
   std::vector<glm::vec3> rotations;
@@ -32,7 +23,7 @@ public:
   void addCubes(u32 count);
 
   InstanceData data;
-  MeshGeometry mesh;
+  MeshAsset mesh;
   std::mt19937 random;
 
   u32 maxInstances;

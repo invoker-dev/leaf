@@ -25,7 +25,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_compile_options(
         -g3
         -O0
-        -fno-omit-frame-pointer
+        # -fomit-frame-pointer ?
         -fno-inline
         -Wall
         -Wextra
@@ -49,10 +49,11 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 # Dependencies -- System Installed
 # ------------------------------------------------------
 # program
-find_package(Vulkan REQUIRED)
-find_package(SDL3   REQUIRED)
-find_package(glm    REQUIRED)
-find_package(fmt    REQUIRED)
+find_package(Vulkan   REQUIRED)
+find_package(SDL3     REQUIRED)
+find_package(glm      REQUIRED)
+find_package(fmt      REQUIRED)
+find_package(simdjson REQUIRED)
 
 # ------------------------------------------------------
 # Dependencies -- Submodules
@@ -106,6 +107,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Vulkan::Vulkan
     vk-bootstrap
     SDL3::SDL3
+    simdjson
     glm::glm
     fmt::fmt
     fastgltf

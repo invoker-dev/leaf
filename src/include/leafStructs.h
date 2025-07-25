@@ -8,6 +8,7 @@
 #include <glm/vec4.hpp>
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan_core.h>
+#include <types.h>
 
 struct AllocatedImage {
   VkImage       image;
@@ -71,4 +72,20 @@ struct FragPushData {
 struct CameraUBO {
   glm::mat4 view;
   glm::mat4 projection;
+};
+
+struct GeoSurface {
+  uint32_t startIndex;
+  uint32_t count;
+};
+
+struct MeshAsset {
+  std::string             name;
+  std::vector<GeoSurface> surfaces;
+  std::vector<Vertex>     vertices;
+  std::vector<u32>        indices;
+  GPUMeshBuffers          meshBuffers;
+
+  VkBuffer& getIndexBuffer() { return meshBuffers.indexBuffer.buffer; }
+  VkBuffer& getVertexBuffer() { return meshBuffers.vertexBuffer.buffer; }
 };

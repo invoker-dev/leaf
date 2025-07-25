@@ -16,7 +16,7 @@ CubeSystem::CubeSystem() {
   random = std::mt19937(std::random_device{}());
 
   // initialCubeAmount = 2 << 9;
-  initialCubeAmount = 4;
+  initialCubeAmount = 1;
   data.positions.reserve(initialCubeAmount);
   data.rotations.reserve(initialCubeAmount);
   data.scales.reserve(initialCubeAmount);
@@ -102,9 +102,12 @@ void CubeSystem::addCubes(uint32_t count) {
 
   f32 pi = glm::pi<f32>();
   for (size_t i = startIndex; i < startIndex + count; i++) {
-    data.rotations[i].x = dist(random) * 2 * pi;
-    data.rotations[i].y = dist(random) * 2 * pi;
-    data.rotations[i].z = dist(random) * 2 * pi;
+    // data.rotations[i].x = dist(random) * 2 * pi;
+    // data.rotations[i].x = dist(random) * 2 * pi;
+    // data.rotations[i].y = dist(random) * 2 * pi;
+    data.rotations[i].z = 0;
+    data.rotations[i].y = 0;
+    data.rotations[i].z = 0; 
   }
 
   for (size_t i = startIndex; i < startIndex + count; i++) {
