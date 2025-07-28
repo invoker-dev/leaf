@@ -502,7 +502,7 @@ void Engine::initPipeline() {
           // .setPolygonMode(VK_POLYGON_MODE_LINE) // wireframe
           .setCullMode(VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE)
           .disableMultiSampling()
-          .disableBlending()
+          .enableBlendingAlphaBlend()
           .setDepthTest(true)
           .setColorAttachmentFormat(renderData.drawImage.format);
 
@@ -943,9 +943,6 @@ GPUMeshBuffers Engine::uploadMesh(std::span<u32>    indices,
 }
 
 void Engine::initEntities() {
-
-  // cubeSystem.mesh.meshBuffers =
-  //     uploadMesh(cubeSystem.mesh.indices, cubeSystem.mesh.vertices);
 
   MeshAsset meshAsset = leafGltf::loadGltfMesh("assets/planet.gltf");
 

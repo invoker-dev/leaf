@@ -136,7 +136,6 @@ MeshAsset loadGltfMesh(std::filesystem::path filePath) {
         vtx.color = glm::vec4(vtx.position, 1.f);
       }
     }
-    // newmesh.meshBuffers = engine.uploadMesh(indices, vertices);
 
     newmesh.indices  = indices;
     newmesh.vertices = vertices;

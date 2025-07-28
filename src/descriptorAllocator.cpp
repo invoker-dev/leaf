@@ -1,7 +1,6 @@
 #include "VkBootstrapDispatch.h"
 #include <descriptorAllocator.h>
 #include <fcntl.h>
-#include <functional>
 #include <leafInit.h>
 #include <leafStructs.h>
 #include <leafUtil.h>
