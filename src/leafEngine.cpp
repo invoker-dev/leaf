@@ -19,12 +19,12 @@
 #include <SDL3/SDL_vulkan.h>
 #include <VkBootstrap.h>
 #include <cstddef>
-#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <fmt/base.h>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_float4x4.hpp>
+#include <glm/ext/vector_float3.hpp>
 #include <glm/ext/vector_float4.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/trigonometric.hpp>
@@ -37,7 +37,6 @@
 #include <leafInit.h>
 #include <leafStructs.h>
 #include <leafUtil.h>
-#include <memory>
 #include <pipelineBuilder.h>
 #include <vector>
 #include <vulkan/vulkan_core.h>
@@ -60,17 +59,14 @@ Engine::Engine() {
   initSwapchain();
   initCommands();
   initSynchronization();
-  initDescriptorLayout();
-  initDescriptorPool();
 
   // TODO: This order is not fine
   initCamera();
-  initDescriptorSets();
+
+  initDescriptors();
   initImGUI();
   initPipeline();
-
-  initCubes();
-  initMesh();
+  initEntities();
 };
 Engine::~Engine() {
 
@@ -130,6 +126,8 @@ void Engine::initVulkan() {
       .require_api_version(1, 3, 0)
       .use_default_debug_messenger()
       .request_validation_layers(USE_VALIDATION_LAYERS)
+      // .set_debug_messenger_severity(DEBUG_SEVERITY)
+      // .set_debug_messenger_type(DEBUG_TYPE)
       .enable_extensions(sdlExtensions);
 
   auto returnedInstance = builder.build();
@@ -186,11 +184,16 @@ void Engine::initVulkan() {
   core.device   = returnedDevice.value();
   core.dispatch = core.device.make_table();
 
+  fmt::println("PD {}", (void*)core.physicalDevice.physical_device);
+
   VmaAllocatorCreateInfo allocatorInfo = {};
   allocatorInfo.physicalDevice         = core.physicalDevice;
-  allocatorInfo.device                 = core.device;
-  allocatorInfo.instance               = core.instance;
+  allocatorInfo.device                 = core.device.device;
+  allocatorInfo.instance               = core.instance.instance;
   allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+
+  fmt::println("PD {}", (void*)core.physicalDevice.physical_device);
+  fmt::println("PD {}", (void*)core.physicalDevice);
   vmaCreateAllocator(&allocatorInfo, &core.allocator);
 }
 
@@ -358,8 +361,9 @@ void Engine::initSynchronization() {
   fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // start as signaled
 
   VkSemaphoreCreateInfo semaphoreInfo = {};
-  semaphoreInfo.sType                 = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-  semaphoreInfo.flags                 = 0;
+
+  semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+  semaphoreInfo.flags = 0;
 
   u32 imageCount = swapchain.vkbSwapchain.image_count;
   renderData.renderFinishedSemaphores.resize(imageCount);
@@ -479,8 +483,10 @@ void Engine::initPipeline() {
   VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
   pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
   pipelineLayoutInfo.flags = 0;
-  pipelineLayoutInfo.setLayoutCount         = 1;
-  pipelineLayoutInfo.pSetLayouts            = &renderData.descriptorSetLayout;
+  pipelineLayoutInfo.setLayoutCount =
+      renderData.descriptorAllocator.descriptorSetLayouts.size();
+  pipelineLayoutInfo.pSetLayouts =
+      renderData.descriptorAllocator.descriptorSetLayouts.data();
   pipelineLayoutInfo.pushConstantRangeCount = 2;
   pipelineLayoutInfo.pPushConstantRanges    = pushConstantRanges;
 
@@ -492,8 +498,8 @@ void Engine::initPipeline() {
           .setLayout(renderData.pipelineLayout)
           .setShaders(vertexShader, fragmentShader)
           .setInputTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
-          // .setPolygonMode(VK_POLYGON_MODE_FILL)
-          .setPolygonMode(VK_POLYGON_MODE_LINE) // wireframe
+          .setPolygonMode(VK_POLYGON_MODE_FILL)
+          // .setPolygonMode(VK_POLYGON_MODE_LINE) // wireframe
           .setCullMode(VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE)
           .disableMultiSampling()
           .disableBlending()
@@ -545,12 +551,11 @@ void Engine::drawImGUI(VkCommandBuffer cmd, VkImageView targetImage) {
   core.dispatch.cmdEndRendering(cmd);
 }
 
-void Engine::draw() {
-  // wait for GPU to finish work
+void Engine::prepareFrame() {
+
   vkAssert(core.dispatch.waitForFences(1, &getCurrentFrame().renderFence, true,
                                        1'000'000'000));
 
-  u32                       swapchainImageIndex;
   VkAcquireNextImageInfoKHR acquireInfo = {};
   acquireInfo.sType      = VK_STRUCTURE_TYPE_ACQUIRE_NEXT_IMAGE_INFO_KHR;
   acquireInfo.swapchain  = swapchain.vkbSwapchain;
@@ -560,7 +565,7 @@ void Engine::draw() {
   acquireInfo.deviceMask = 0x1;
 
   VkResult result =
-      core.dispatch.acquireNextImage2KHR(&acquireInfo, &swapchainImageIndex);
+      core.dispatch.acquireNextImage2KHR(&acquireInfo, &swapchain.imageIndex);
   if (result == VK_ERROR_OUT_OF_DATE_KHR) {
     swapchain.resize = true;
     return;
@@ -583,42 +588,11 @@ void Engine::draw() {
   cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
   vkAssert(core.dispatch.beginCommandBuffer(cmd, &cmdBeginInfo));
+}
 
-  leafUtil::transitionImage(cmd, renderData.drawImage.image,
-                            VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+void Engine::submitFrame() {
 
-  drawBackground(cmd);
-
-  leafUtil::transitionImage(cmd, renderData.drawImage.image,
-                            VK_IMAGE_LAYOUT_GENERAL,
-                            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-
-  leafUtil::transitionImage(cmd, renderData.depthImage.image,
-                            VK_IMAGE_LAYOUT_UNDEFINED,
-                            VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
-
-  drawGeometry(cmd, swapchainImageIndex);
-
-  leafUtil::transitionImage(cmd, renderData.drawImage.image,
-                            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-
-  leafUtil::transitionImage(cmd, swapchain.images[swapchainImageIndex],
-                            VK_IMAGE_LAYOUT_UNDEFINED,
-                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-
-  leafUtil::copyImageToImage(cmd, renderData.drawImage.image,
-                             swapchain.images[swapchainImageIndex],
-                             renderData.drawExtent, swapchain.extent);
-
-  leafUtil::transitionImage(cmd, swapchain.images[swapchainImageIndex],
-                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-
-  drawImGUI(cmd, swapchain.imageViews[swapchainImageIndex]);
-  leafUtil::transitionImage(cmd, swapchain.images[swapchainImageIndex],
-                            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+  VkCommandBuffer cmd = getCurrentFrame().commandBuffer;
 
   vkAssert(core.dispatch.endCommandBuffer(cmd));
 
@@ -636,7 +610,7 @@ void Engine::draw() {
   VkSemaphoreSubmitInfo signalInfo = {};
   signalInfo.sType                 = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
   signalInfo.semaphore =
-      renderData.renderFinishedSemaphores[swapchainImageIndex];
+      renderData.renderFinishedSemaphores[swapchain.imageIndex];
   signalInfo.value     = 0;
   signalInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
 
@@ -658,9 +632,9 @@ void Engine::draw() {
   presentInfo.pSwapchains      = &swapchain.vkbSwapchain.swapchain;
   presentInfo.swapchainCount   = 1;
   presentInfo.pWaitSemaphores =
-      &renderData.renderFinishedSemaphores[swapchainImageIndex];
+      &renderData.renderFinishedSemaphores[swapchain.imageIndex];
   presentInfo.waitSemaphoreCount = 1;
-  presentInfo.pImageIndices      = &swapchainImageIndex;
+  presentInfo.pImageIndices      = &swapchain.imageIndex;
 
   VkResult presentResult =
       core.dispatch.queuePresentKHR(core.graphicsQueue, &presentInfo);
@@ -669,6 +643,87 @@ void Engine::draw() {
   }
 
   renderData.frameNumber++;
+}
+
+void Engine::initDescriptors() {
+  auto* descAllocator            = &renderData.descriptorAllocator;
+  renderData.descriptorAllocator = {core.dispatch};
+  renderData.descriptorAllocator.setupLayouts();
+  renderData.descriptorAllocator.setupPools();
+
+  for (u32 i = 0; i < FRAMES_IN_FLIGHT; i++) {
+
+    VkDescriptorSetAllocateInfo allocInfo = {};
+    allocInfo.sType          = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = descAllocator->descriptorPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts        = descAllocator->descriptorSetLayouts.data();
+
+    vkAssert(core.dispatch.allocateDescriptorSets(
+        &allocInfo, &descAllocator->descriptorSets[i]));
+
+    VkDescriptorBufferInfo cameraBufferInfo{};
+    cameraBufferInfo.buffer = renderData.cameraBuffers[i].buffer;
+    cameraBufferInfo.offset = 0;
+    cameraBufferInfo.range  = sizeof(CameraUBO);
+
+    VkWriteDescriptorSet descriptorWrite = {};
+    descriptorWrite.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet          = descAllocator->descriptorSets[i];
+    descriptorWrite.dstBinding      = 0;
+    descriptorWrite.dstArrayElement = 0;
+    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorWrite.pBufferInfo     = &cameraBufferInfo;
+
+    core.dispatch.updateDescriptorSets(1, &descriptorWrite, 0, nullptr);
+  }
+}
+
+void Engine::draw() {
+
+  prepareFrame();
+
+  VkCommandBuffer cmd = getCurrentFrame().commandBuffer;
+  // wait for GPU to finish work
+
+  leafUtil::transitionImage(cmd, renderData.drawImage.image,
+                            VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+
+  drawBackground(cmd);
+
+  leafUtil::transitionImage(cmd, renderData.drawImage.image,
+                            VK_IMAGE_LAYOUT_GENERAL,
+                            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+  leafUtil::transitionImage(cmd, renderData.depthImage.image,
+                            VK_IMAGE_LAYOUT_UNDEFINED,
+                            VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+
+  drawGeometry(cmd);
+
+  leafUtil::transitionImage(cmd, renderData.drawImage.image,
+                            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+
+  leafUtil::transitionImage(cmd, swapchain.images[swapchain.imageIndex],
+                            VK_IMAGE_LAYOUT_UNDEFINED,
+                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+  leafUtil::copyImageToImage(cmd, renderData.drawImage.image,
+                             swapchain.images[swapchain.imageIndex],
+                             renderData.drawExtent, swapchain.extent);
+
+  leafUtil::transitionImage(cmd, swapchain.images[swapchain.imageIndex],
+                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+  drawImGUI(cmd, swapchain.imageViews[swapchain.imageIndex]);
+  leafUtil::transitionImage(cmd, swapchain.images[swapchain.imageIndex],
+                            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+
+  submitFrame();
 }
 
 void Engine::drawBackground(VkCommandBuffer cmd) {
@@ -685,7 +740,7 @@ void Engine::drawBackground(VkCommandBuffer cmd) {
                                    &clearRange);
 }
 
-void Engine::drawGeometry(VkCommandBuffer cmd, u32 swapchainImageIndex) {
+void Engine::drawGeometry(VkCommandBuffer cmd) {
   VkRenderingAttachmentInfo colorAttachment = {};
   colorAttachment.sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
   colorAttachment.imageView   = renderData.drawImage.imageView;
@@ -724,19 +779,18 @@ void Engine::drawGeometry(VkCommandBuffer cmd, u32 swapchainImageIndex) {
 
   core.dispatch.cmdBindDescriptorSets(
       cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, renderData.pipelineLayout, 0, 1,
-      &renderData.descriptorSets[renderData.frameNumber % FRAMES_IN_FLIGHT], 0,
-      nullptr);
-
-  core.dispatch.cmdBindIndexBuffer(cmd, cubeSystem.mesh.getIndexBuffer(), 0,
-                                   VK_INDEX_TYPE_UINT32);
+      &renderData.descriptorAllocator
+           .descriptorSets[renderData.frameNumber % FRAMES_IN_FLIGHT],
+      0, nullptr);
 
   VkViewport viewport = {};
-  viewport.x          = 0;
-  viewport.y          = 0;
-  viewport.width      = renderData.drawExtent.width;
-  viewport.height     = renderData.drawExtent.height;
-  viewport.minDepth   = 0.f;
-  viewport.maxDepth   = 1.f;
+
+  viewport.x        = 0;
+  viewport.y        = 0;
+  viewport.width    = renderData.drawExtent.width;
+  viewport.height   = renderData.drawExtent.height;
+  viewport.minDepth = 0.f;
+  viewport.maxDepth = 1.f;
   core.dispatch.cmdSetViewport(cmd, 0, 1, &viewport);
 
   VkRect2D scissor      = {};
@@ -746,13 +800,13 @@ void Engine::drawGeometry(VkCommandBuffer cmd, u32 swapchainImageIndex) {
   scissor.extent.height = renderData.drawExtent.height;
   core.dispatch.cmdSetScissor(cmd, 0, 1, &scissor);
 
-  // per cube
-  for (size_t i = 0; i < cubeSystem.data.count; i++) {
+  for (size_t i = 0; i < entities.size(); i++) {
+
 
     VertPushData mesh        = {};
-    mesh.model               = cubeSystem.data.modelMatrices[i];
-    mesh.color               = cubeSystem.data.colors[i];
-    mesh.vertexBufferAddress = cubeSystem.mesh.meshBuffers.vertexBufferAddress;
+    mesh.model               = entities[i].model;
+    mesh.color               = {};
+    mesh.vertexBufferAddress = entities[i].mesh.meshBuffers.vertexBufferAddress;
 
     VkPushConstantsInfo vertPushInfo = {};
     vertPushInfo.sType               = VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO;
@@ -766,24 +820,10 @@ void Engine::drawGeometry(VkCommandBuffer cmd, u32 swapchainImageIndex) {
                                    vertPushInfo.stageFlags, vertPushInfo.offset,
                                    vertPushInfo.size, vertPushInfo.pValues);
 
-    // Old push data for colors
-    // FragPushData fragColor = {cubeSystem.data.colors[i]};
-    //
-    // constexpr size_t    fragOffset   = (sizeof(VertPushData) + 15) & ~15;
-    // VkPushConstantsInfo fragPushInfo = {};
-    // fragPushInfo.sType               = VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO;
-    // fragPushInfo.layout              = renderData.pipelineLayout;
-    // fragPushInfo.stageFlags          = VK_SHADER_STAGE_FRAGMENT_BIT;
-    // fragPushInfo.offset              = fragOffset;
-    // fragPushInfo.size                = sizeof(FragPushData);
-    // fragPushInfo.pValues             = &fragColor;
-    //
-    // core.dispatch.cmdPushConstants(cmd, fragPushInfo.layout,
-    //                                fragPushInfo.stageFlags,
-    //                                fragPushInfo.offset, fragPushInfo.size,
-    //                                fragPushInfo.pValues);
+    core.dispatch.cmdBindIndexBuffer(cmd, entities[i].mesh.getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
-    core.dispatch.cmdDrawIndexed(cmd, cubeSystem.mesh.surfaces[0].count, 1, cubeSystem.mesh.surfaces[0].startIndex, 0, 0);
+    core.dispatch.cmdDrawIndexed(cmd, entities[i].mesh.surfaces[0].count, 1,
+                                 entities[i].mesh.surfaces[0].startIndex, 0, 0);
   }
 
   core.dispatch.cmdEndRendering(cmd);
@@ -902,30 +942,39 @@ GPUMeshBuffers Engine::uploadMesh(std::span<u32>    indices,
   return newSurface;
 }
 
-void Engine::initMesh() {
+void Engine::initEntities() {
 
   // cubeSystem.mesh.meshBuffers =
   //     uploadMesh(cubeSystem.mesh.indices, cubeSystem.mesh.vertices);
 
-  std::vector<std::shared_ptr<MeshAsset>> meshAssets =
-      leafGltf::loadGltfMeshes("assets/teapot.gltf").value();
+  MeshAsset meshAsset = leafGltf::loadGltfMesh("assets/planet.gltf");
 
-  GPUMeshBuffers gltfMesh =
-      uploadMesh(meshAssets[0]->indices, meshAssets[0]->vertices);
+  GPUMeshBuffers gltfMesh = uploadMesh(meshAsset.indices, meshAsset.vertices);
 
-  // TODO: fix this shit
-  cubeSystem.mesh = *meshAssets.at(0).get();
-  cubeSystem.mesh.meshBuffers = gltfMesh;
+  for (u32 i = 0; i < 1; i++) {
+    Entity entity;
+    entity.position         = glm::vec3(0);
+    entity.rotation         = glm::vec3(0);
+    entity.scale            = glm::vec3(1);
+    entity.mesh             = meshAsset;
+    entity.mesh.meshBuffers = gltfMesh;
 
+    glm::mat4 model = glm::mat4(1.f);
+
+    model = glm::scale(model, entity.scale);
+    model = glm::rotate(model, entity.rotation.x, glm::vec3(1, 0, 0));
+    model = glm::rotate(model, entity.rotation.y, glm::vec3(0, 1, 0));
+    model = glm::rotate(model, entity.rotation.z, glm::vec3(0, 0, 1));
+    model = glm::translate(model, entity.position);
+
+    entity.model = model;
+    entities.push_back(entity);
+  }
 }
 
 void Engine::processEvent(SDL_Event& e) {
 
   ImGui_ImplSDL3_ProcessEvent(&e);
-
-  if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-    cubeSystem.addCubes(5);
-  }
 
   if (e.type == SDL_EVENT_KEY_DOWN) {
     if (e.key.scancode == SDL_SCANCODE_ESCAPE) {
@@ -936,11 +985,11 @@ void Engine::processEvent(SDL_Event& e) {
   }
 
   camera.handleMouse(e);
+  camera.handleInput();
 }
 
 void Engine::update(f64 dt) {
 
-  camera.handleInput();
   int width, height;
   SDL_GetWindowSizeInPixels(surface.window, &width, &height);
   if (width != swapchain.extent.width || height != swapchain.extent.height) {
@@ -949,40 +998,6 @@ void Engine::update(f64 dt) {
   }
 
   camera.update(dt);
-}
-
-void Engine::initDescriptorPool() {
-
-  VkDescriptorPoolSize poolSizes[] = {{
-      .type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-      .descriptorCount = 1 * FRAMES_IN_FLIGHT,
-  }};
-
-  VkDescriptorPoolCreateInfo poolInfo = {};
-  poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-  poolInfo.poolSizeCount = 1;
-  poolInfo.pPoolSizes    = poolSizes;
-  poolInfo.maxSets       = FRAMES_IN_FLIGHT;
-
-  vkAssert(core.dispatch.createDescriptorPool(&poolInfo, nullptr,
-                                              &renderData.descriptorPool));
-}
-void Engine::initDescriptorLayout() {
-
-  VkDescriptorSetLayoutBinding bindings[] = {
-      {.binding            = 0,
-       .descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-       .descriptorCount    = 1,
-       .stageFlags         = VK_SHADER_STAGE_VERTEX_BIT,
-       .pImmutableSamplers = nullptr}};
-
-  VkDescriptorSetLayoutCreateInfo layoutInfo = {};
-  layoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-  layoutInfo.bindingCount = 1;
-  layoutInfo.pBindings    = bindings;
-
-  vkAssert(core.dispatch.createDescriptorSetLayout(
-      &layoutInfo, nullptr, &renderData.descriptorSetLayout));
 }
 
 void Engine::initCamera() {
@@ -998,40 +1013,6 @@ void Engine::initCamera() {
   }
 }
 
-void Engine::initDescriptorSets() {
-  std::vector<VkDescriptorSetLayout> layouts(FRAMES_IN_FLIGHT,
-                                             renderData.descriptorSetLayout);
-  VkDescriptorSetAllocateInfo        allocInfo = {};
-  allocInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-  allocInfo.descriptorPool     = renderData.descriptorPool;
-  allocInfo.descriptorSetCount = FRAMES_IN_FLIGHT;
-  allocInfo.pSetLayouts        = layouts.data();
-
-  renderData.descriptorSets.resize(FRAMES_IN_FLIGHT);
-  vkAssert(core.dispatch.allocateDescriptorSets(
-      &allocInfo, renderData.descriptorSets.data()));
-
-  for (size_t i = 0; i < FRAMES_IN_FLIGHT; i++) {
-    VkDescriptorBufferInfo cameraBufferInfo{};
-    cameraBufferInfo.buffer = renderData.cameraBuffers[i].buffer;
-    cameraBufferInfo.offset = 0;
-    cameraBufferInfo.range  = sizeof(CameraUBO);
-
-    VkWriteDescriptorSet descriptorWrite = {};
-    descriptorWrite.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet          = renderData.descriptorSets[i];
-    descriptorWrite.dstBinding      = 0;
-    descriptorWrite.dstArrayElement = 0;
-    descriptorWrite.descriptorCount = 1;
-    descriptorWrite.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptorWrite.pBufferInfo     = &cameraBufferInfo;
-
-    core.dispatch.updateDescriptorSets(1, &descriptorWrite, 0, nullptr);
-  }
-}
-
-void Engine::initCubes() { cubeSystem = {}; }
-
 void Engine::resizeSwapchain(u32 width, u32 height) {
   core.dispatch.deviceWaitIdle();
 
@@ -1041,5 +1022,4 @@ void Engine::resizeSwapchain(u32 width, u32 height) {
   initSwapchain();
   swapchain.resize = false;
 }
-
 }; // namespace LeafEngine

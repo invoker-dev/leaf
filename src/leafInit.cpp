@@ -42,4 +42,28 @@ VkImageViewCreateInfo imageViewCreateInfo(VkFormat format, VkImage image,
 
   return info;
 }
+
+VkDescriptorSetLayoutBinding
+descriptorSetLayoutBinding(VkDescriptorType   type,
+                           VkShaderStageFlags shaderStage) {
+
+  VkDescriptorSetLayoutBinding binding = {.binding            = 0,
+                                          .descriptorType     = type,
+                                          .descriptorCount    = 1,
+                                          .stageFlags         = shaderStage,
+                                          .pImmutableSamplers = nullptr};
+
+  return binding;
+}
+
+VkPipelineLayoutCreateInfo
+pipelineLayoutCreateInfo(VkDescriptorSetLayout& layout, u32 count) {
+
+  VkPipelineLayoutCreateInfo createInfo = {};
+  createInfo.pSetLayouts                = &layout;
+  createInfo.setLayoutCount             = count;
+  createInfo.pushConstantRangeCount     = 0;
+
+  // TODO: finish
+}
 } // namespace leafInit

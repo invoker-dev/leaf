@@ -9,14 +9,12 @@
 #include <vk_mem_alloc.h>
 
 #include <camera.h>
-#include <cube.h>
+#include <entity.h>
 #include <leafStructs.h>
 #include <span>
 #include <vulkan/vulkan_core.h>
 #include <vulkanDestroyer.h>
-
-constexpr bool USE_VALIDATION_LAYERS = true;
-constexpr u32  FRAMES_IN_FLIGHT      = 3;
+#include <descriptorAllocator.h>
 
 namespace LeafEngine {
 
@@ -47,26 +45,29 @@ struct VulkanSwapchain {
   std::vector<VkImageView> imageViews;
   VkExtent2D               extent;
   bool                     resize;
+  u32                      imageIndex = 0;
 };
 
 struct VulkanRenderData {
 
-  FrameData                    frames[FRAMES_IN_FLIGHT];
-  u64                          frameNumber;
-  AllocatedImage               drawImage;
-  VkExtent2D                   drawExtent;
-  f32                          renderScale = 1.f;
-  AllocatedImage               depthImage;
-  VkDescriptorPool             descriptorPool;
-  VkDescriptorSetLayout        descriptorSetLayout;
-  std::vector<VkDescriptorSet> descriptorSets;
+  FrameData           frames[FRAMES_IN_FLIGHT];
+  u64                 frameNumber;
+  AllocatedImage      drawImage;
+  VkExtent2D          drawExtent;
+  f32                 renderScale = 1.f;
+  AllocatedImage      depthImage;
+  DescriptorAllocator descriptorAllocator;
+  // VkDescriptorPool             descriptorPool;
+  // VkDescriptorSetLayout        descriptorSetLayout;
+  // std::vector<VkDescriptorSet> descriptorSets;
   std::vector<AllocatedBuffer> cameraBuffers;
   VkPipeline                   pipeline;
   VkPipelineLayout             pipelineLayout;
   std::vector<VkSemaphore>     renderFinishedSemaphores;
-
-  glm::vec4 backgroundColor;
+  glm::vec4                    backgroundColor;
 };
+
+struct DescriptorData {};
 
 class Engine {
 public:
@@ -89,7 +90,7 @@ public:
 
   Camera camera;
 
-  CubeSystem cubeSystem;
+  std::vector<Entity> entities;
 
   void createSDLWindow();
   void initVulkan();
@@ -97,18 +98,17 @@ public:
   void initSwapchain();
   void initCommands();
   void initSynchronization();
-  void initDescriptorLayout();
-  void initDescriptorPool();
-  void initDescriptorSets();
+  void initDescriptors();
   void initImGUI();
   void initPipeline();
-  void initMesh();
+  void initEntities();
   void initCamera();
-  void initCubes();
 
+  void prepareFrame();
+  void submitFrame();
   void drawImGUI(VkCommandBuffer cmd, VkImageView targetImage);
   void drawBackground(VkCommandBuffer cmd);
-  void drawGeometry(VkCommandBuffer cmd, u32 imgIndex);
+  void drawGeometry(VkCommandBuffer cmd);
 
   void            createSwapchain(u32 width, u32 height);
   void            resizeSwapchain(u32 width, u32 height);

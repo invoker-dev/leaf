@@ -6,9 +6,24 @@
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
+#include <types.h>
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan_core.h>
-#include <types.h>
+
+constexpr bool USE_VALIDATION_LAYERS = true;
+
+constexpr u32 DEBUG_SEVERITY = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT |
+                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
+                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT;
+
+constexpr u32 DEBUG_TYPE =
+    VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT |
+    VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+    // VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT |
+    VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT;
+
+constexpr u32 FRAMES_IN_FLIGHT = 3;
 
 struct AllocatedImage {
   VkImage       image;

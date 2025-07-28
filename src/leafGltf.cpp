@@ -1,20 +1,20 @@
-#include "leafEngine.h"
 #include <fastgltf/core.hpp>
 #include <fastgltf/glm_element_traits.hpp> // for glm support (optional)
 #include <fastgltf/tools.hpp>
 #include <fastgltf/types.hpp>
 #include <fastgltf/util.hpp>
 #include <filesystem>
+#include <fmt/base.h>
 #include <iostream>
 #include <leafGltf.h>
 #include <memory>
 #include <optional>
+#include <string_view>
 #include <vector>
 
 namespace leafGltf {
 
-std::optional<std::vector<std::shared_ptr<MeshAsset>>>
-loadGltfMeshes(std::filesystem::path filePath) {
+MeshAsset loadGltfMesh(std::filesystem::path filePath) {
   //> openmesh
   std::cout << "Loading GLTF: " << filePath << std::endl;
   std::cout << "Loading GLTF: " << std::filesystem::absolute(filePath)
@@ -29,7 +29,7 @@ loadGltfMeshes(std::filesystem::path filePath) {
 
   // auto load = parser.loadGltfBinary(data, filePath.parent_path(),
   // gltfOptions);
-  auto load = parser.loadGltfJson(data, filePath.parent_path(),gltfOptions);
+  auto load = parser.loadGltfJson(data, filePath.parent_path(), gltfOptions);
   if (load) {
     gltf = std::move(load.get());
   } else {
@@ -39,7 +39,7 @@ loadGltfMeshes(std::filesystem::path filePath) {
   }
   //< openmesh
   //> loadmesh
-  std::vector<std::shared_ptr<MeshAsset>> meshes;
+  std::vector<MeshAsset> meshes;
 
   // use the same vectors for all meshes so that the memory doesnt reallocate
   // as often
@@ -140,10 +140,11 @@ loadGltfMeshes(std::filesystem::path filePath) {
 
     newmesh.indices  = indices;
     newmesh.vertices = vertices;
-    meshes.emplace_back(std::make_shared<MeshAsset>(std::move(newmesh)));
+    meshes.emplace_back(newmesh);
   }
 
-  return meshes;
+  // TODO: Figure this out
+  return meshes[0];
 
   //< loadmesh
 }

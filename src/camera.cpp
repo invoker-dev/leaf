@@ -21,7 +21,7 @@
 #include <leafStructs.h>
 
 Camera::Camera() {
-  position    = glm::vec3(0);
+  position    = glm::vec3(0,0,100);
   velocity    = glm::vec3(0);
   pitch       = 0;
   yaw         = 0;
