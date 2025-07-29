@@ -2,19 +2,20 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_events.h>
 #include <VkBootstrap.h>
-#include <cstdint>
 #include <fmt/core.h>
 #include <glm/ext/vector_float4.hpp>
 #include <vector>
 #include <vk_mem_alloc.h>
 
 #include <camera.h>
+#include <constants.h>
+#include <descriptorAllocator.h>
+#include <descriptorWriter.h>
 #include <entity.h>
 #include <leafStructs.h>
 #include <span>
 #include <vulkan/vulkan_core.h>
 #include <vulkanDestroyer.h>
-#include <descriptorAllocator.h>
 
 namespace LeafEngine {
 
@@ -50,24 +51,26 @@ struct VulkanSwapchain {
 
 struct VulkanRenderData {
 
-  FrameData           frames[FRAMES_IN_FLIGHT];
-  u64                 frameNumber;
-  AllocatedImage      drawImage;
-  VkExtent2D          drawExtent;
-  f32                 renderScale = 1.f;
-  AllocatedImage      depthImage;
-  DescriptorAllocator descriptorAllocator;
-  // VkDescriptorPool             descriptorPool;
-  // VkDescriptorSetLayout        descriptorSetLayout;
-  // std::vector<VkDescriptorSet> descriptorSets;
-  std::vector<AllocatedBuffer> cameraBuffers;
-  VkPipeline                   pipeline;
-  VkPipelineLayout             pipelineLayout;
-  std::vector<VkSemaphore>     renderFinishedSemaphores;
-  glm::vec4                    backgroundColor;
-};
+  FrameData                frames[FRAMES_IN_FLIGHT];
+  u64                      frameNumber;
+  AllocatedImage           drawImage;
+  VkExtent2D               drawExtent;
+  f32                      renderScale = 1.f;
+  AllocatedImage           depthImage;
+  AllocatedBuffer          cameraBuffer;
+  VkPipeline               pipeline;
+  VkPipelineLayout         pipelineLayout;
+  std::vector<VkSemaphore> renderFinishedSemaphores;
+  glm::vec4                backgroundColor;
+  glm::vec4                entityColor;
 
-struct DescriptorData {};
+  DescriptorAllocator descriptorAllocator;
+  DescriptorWriter    descriptorWriter;
+
+  GPUSceneData          sceneData;
+  VkDescriptorSetLayout gpuSceneDataLayout;
+  VkDescriptorSet       imageDescriptorSet;
+};
 
 class Engine {
 public:
@@ -112,8 +115,15 @@ public:
 
   void            createSwapchain(u32 width, u32 height);
   void            resizeSwapchain(u32 width, u32 height);
-  AllocatedBuffer allocateBuffer(size_t allocSize, VkBufferUsageFlags usage,
-                                 VmaMemoryUsage memoryUsage);
+  AllocatedBuffer createBuffer(size_t allocSize, VkBufferUsageFlags usage,
+                               VmaMemoryUsage memoryUsage);
+
+  AllocatedImage  createImage(VkExtent3D size, VkFormat format,
+                              VkImageUsageFlags usage, bool mipmapped = false);
+
+  AllocatedImage  createImage(void* data, VkExtent3D size, VkFormat format,
+                              VkImageUsageFlags usage, bool mipmapped = false);
+
   GPUMeshBuffers uploadMesh(std::span<u32> indices, std::span<Vertex> vertices);
 
   FrameData& getCurrentFrame() {

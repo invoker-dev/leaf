@@ -129,13 +129,13 @@ MeshAsset loadGltfMesh(std::filesystem::path filePath) {
       newmesh.surfaces.push_back(newSurface);
     }
 
-    // display the vertex normals
-    constexpr bool OverrideColors = true;
-    if (OverrideColors) {
-      for (Vertex& vtx : vertices) {
-        vtx.color = glm::vec4(vtx.position, 1.f);
-      }
-    }
+    // // display the vertex normals
+    // constexpr bool OverrideColors = true;
+    // if (OverrideColors) {
+    //   for (Vertex& vtx : vertices) {
+    //     vtx.color = glm::vec4(vtx.position, 0.5f);
+    //   }
+    // }
 
     newmesh.indices  = indices;
     newmesh.vertices = vertices;

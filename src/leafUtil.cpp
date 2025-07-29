@@ -98,7 +98,7 @@ VkShaderModule loadShaderModule(const std::string& fileName,
   info.pCode                    = buffer.data();
 
   VkShaderModule shaderModule;
-  vkAssert(dispatch.createShaderModule(&info, nullptr, &shaderModule));
+  VK_ASSERT(dispatch.createShaderModule(&info, nullptr, &shaderModule));
   return shaderModule;
 }
 } // namespace leafUtil

@@ -9,21 +9,8 @@
 #include <types.h>
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan_core.h>
-
-constexpr bool USE_VALIDATION_LAYERS = true;
-
-constexpr u32 DEBUG_SEVERITY = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT |
-                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
-                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT;
-
-constexpr u32 DEBUG_TYPE =
-    VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT |
-    VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-    // VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT |
-    VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT;
-
-constexpr u32 FRAMES_IN_FLIGHT = 3;
+#include <constants.h>
+#include <descriptorAllocator.h>
 
 struct AllocatedImage {
   VkImage       image;
@@ -34,10 +21,11 @@ struct AllocatedImage {
 };
 
 struct FrameData {
-  VkCommandPool   commandPool;
-  VkCommandBuffer commandBuffer;
-  VkFence         renderFence;
-  VkSemaphore     imageAvailableSemaphore;
+  VkCommandPool               commandPool;
+  VkCommandBuffer             commandBuffer;
+  VkFence                     renderFence;
+  VkSemaphore                 imageAvailableSemaphore;
+  DescriptorAllocator frameDescriptors;
 };
 
 struct ImmediateData {
@@ -84,9 +72,12 @@ struct FragPushData {
   glm::vec4 color;
 };
 
-struct CameraUBO {
+struct GPUSceneData {
   glm::mat4 view;
   glm::mat4 projection;
+  // glm::vec4 ambientColor;
+  // glm::vec4 sunlightDirection;
+  // glm::vec4 sunlightColor;
 };
 
 struct GeoSurface {

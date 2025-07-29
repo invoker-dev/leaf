@@ -76,7 +76,7 @@ VkPipeline PipelineBuilder::build() const {
   pipelineInfo.pDynamicState = &dynamicInfo;
 
   VkPipeline newPipeline;
-  vkAssert(dispatch.createGraphicsPipelines(VK_NULL_HANDLE, 1, &pipelineInfo,
+  VK_ASSERT(dispatch.createGraphicsPipelines(VK_NULL_HANDLE, 1, &pipelineInfo,
                                             nullptr, &newPipeline));
   return newPipeline;
 }

@@ -18,6 +18,7 @@
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
 #include <VkBootstrap.h>
+#include <constants.h>
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
@@ -38,6 +39,7 @@
 #include <leafStructs.h>
 #include <leafUtil.h>
 #include <pipelineBuilder.h>
+#include <string>
 #include <vector>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_wayland.h>
@@ -70,7 +72,7 @@ Engine::Engine() {
 };
 Engine::~Engine() {
 
-  vkAssert(core.dispatch.deviceWaitIdle());
+  VK_ASSERT(core.dispatch.deviceWaitIdle());
 
   // destroys primitives (images, buffers, fences etc)
 
@@ -281,8 +283,8 @@ void Engine::initSwapchain() {
                                     renderData.drawImage.image,
                                     VK_IMAGE_ASPECT_COLOR_BIT);
 
-  vkAssert(core.dispatch.createImageView(&renderImageViewCreateInfo, nullptr,
-                                         &renderData.drawImage.imageView));
+  VK_ASSERT(core.dispatch.createImageView(&renderImageViewCreateInfo, nullptr,
+                                          &renderData.drawImage.imageView));
 
   renderData.depthImage        = {};
   renderData.depthImage.format = VK_FORMAT_D32_SFLOAT;        // TODO subject to
@@ -326,7 +328,7 @@ void Engine::initCommands() {
 
   for (size_t i = 0; i < FRAMES_IN_FLIGHT; i++) {
 
-    vkAssert(core.dispatch.createCommandPool(
+    VK_ASSERT(core.dispatch.createCommandPool(
         &cmdPoolInfo, nullptr, &renderData.frames[i].commandPool));
 
     vulkanDestroyer.addCommandPool(renderData.frames[i].commandPool);
@@ -337,12 +339,12 @@ void Engine::initCommands() {
     cmdAllocInfo.commandBufferCount = 1;
     cmdAllocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 
-    vkAssert(core.dispatch.allocateCommandBuffers(
+    VK_ASSERT(core.dispatch.allocateCommandBuffers(
         &cmdAllocInfo, &renderData.frames[i].commandBuffer));
   }
   // immediate
-  vkAssert(core.dispatch.createCommandPool(&cmdPoolInfo, nullptr,
-                                           &immediateData.commandPool));
+  VK_ASSERT(core.dispatch.createCommandPool(&cmdPoolInfo, nullptr,
+                                            &immediateData.commandPool));
 
   VkCommandBufferAllocateInfo immCmdAllocInfo = {};
   immCmdAllocInfo.sType       = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -350,8 +352,8 @@ void Engine::initCommands() {
   immCmdAllocInfo.commandBufferCount = 1;
   immCmdAllocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 
-  vkAssert(core.dispatch.allocateCommandBuffers(&immCmdAllocInfo,
-                                                &immediateData.commandBuffer));
+  VK_ASSERT(core.dispatch.allocateCommandBuffers(&immCmdAllocInfo,
+                                                 &immediateData.commandBuffer));
 }
 
 void Engine::initSynchronization() {
@@ -369,11 +371,11 @@ void Engine::initSynchronization() {
   renderData.renderFinishedSemaphores.resize(imageCount);
 
   for (size_t i = 0; i < FRAMES_IN_FLIGHT; i++) {
-    vkAssert(core.dispatch.createFence(&fenceInfo, nullptr,
-                                       &renderData.frames[i].renderFence));
+    VK_ASSERT(core.dispatch.createFence(&fenceInfo, nullptr,
+                                        &renderData.frames[i].renderFence));
     vulkanDestroyer.addFence(renderData.frames[i].renderFence);
 
-    vkAssert(core.dispatch.createSemaphore(
+    VK_ASSERT(core.dispatch.createSemaphore(
         &semaphoreInfo, nullptr,
         &renderData.frames[i].imageAvailableSemaphore));
 
@@ -382,13 +384,13 @@ void Engine::initSynchronization() {
 
   for (size_t i = 0; i < imageCount; i++) {
 
-    vkAssert(core.dispatch.createSemaphore(
+    VK_ASSERT(core.dispatch.createSemaphore(
         &semaphoreInfo, nullptr, &renderData.renderFinishedSemaphores[i]));
 
     vulkanDestroyer.addSemaphore(renderData.renderFinishedSemaphores[i]);
   }
 
-  vkAssert(
+  VK_ASSERT(
       core.dispatch.createFence(&fenceInfo, nullptr, &immediateData.fence));
   vulkanDestroyer.addFence(immediateData.fence);
 }
@@ -424,8 +426,8 @@ void Engine::initImGUI() {
   poolInfo.poolSizeCount = (u32)std::size(pool_sizes);
   poolInfo.pPoolSizes    = pool_sizes;
 
-  vkAssert(core.dispatch.createDescriptorPool(&poolInfo, nullptr,
-                                              &imguiContext.descriptorPool));
+  VK_ASSERT(core.dispatch.createDescriptorPool(&poolInfo, nullptr,
+                                               &imguiContext.descriptorPool));
 
   VkPipelineCreateInfoKHR pipelineInfo = {};
 
@@ -438,8 +440,8 @@ void Engine::initImGUI() {
   initInfo.PipelineCache               = VK_NULL_HANDLE;
   initInfo.DescriptorPool              = imguiContext.descriptorPool;
   initInfo.Subpass                     = 0;
-  initInfo.MinImageCount               = 3;
-  initInfo.ImageCount                  = 3;
+  initInfo.MinImageCount               = FRAMES_IN_FLIGHT;
+  initInfo.ImageCount                  = FRAMES_IN_FLIGHT;
   initInfo.UseDynamicRendering         = true;
   initInfo.PipelineRenderingCreateInfo = {};
   initInfo.PipelineRenderingCreateInfo.sType =
@@ -449,7 +451,7 @@ void Engine::initImGUI() {
       &swapchain.imageFormat;
   initInfo.MSAASamples     = VK_SAMPLE_COUNT_1_BIT;
   initInfo.Allocator       = nullptr;
-  initInfo.CheckVkResultFn = vkAssert;
+  initInfo.CheckVkResultFn = VK_ASSERT;
 
   if (!ImGui_ImplSDL3_InitForVulkan(surface.window)) {
     fmt::println("ImGui_ImplSDL3_InitForVulkan failed");
@@ -468,30 +470,28 @@ void Engine::initPipeline() {
   VkShaderModule fragmentShader =
       leafUtil::loadShaderModule("triangle.frag", core.dispatch);
 
-  VkPushConstantRange pushConstantRanges[2];
+  VkPushConstantRange pushConstantRanges[1];
 
   pushConstantRanges[0].offset     = 0;
   pushConstantRanges[0].size       = sizeof(VertPushData);
   pushConstantRanges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
-  // align by 16 bytes
-  constexpr size_t fragOffset      = (sizeof(VertPushData) + 15) & ~15;
-  pushConstantRanges[1].offset     = fragOffset;
-  pushConstantRanges[1].size       = sizeof(FragPushData);
-  pushConstantRanges[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+  // // align by 16 bytes
+  // constexpr size_t fragOffset      = (sizeof(VertPushData) + 15) & ~15;
+  // pushConstantRanges[1].offset     = fragOffset;
+  // pushConstantRanges[1].size       = sizeof(FragPushData);
+  // pushConstantRanges[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
   VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
   pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
   pipelineLayoutInfo.flags = 0;
-  pipelineLayoutInfo.setLayoutCount =
-      renderData.descriptorAllocator.descriptorSetLayouts.size();
-  pipelineLayoutInfo.pSetLayouts =
-      renderData.descriptorAllocator.descriptorSetLayouts.data();
-  pipelineLayoutInfo.pushConstantRangeCount = 2;
+  pipelineLayoutInfo.setLayoutCount         = 1;
+  pipelineLayoutInfo.pSetLayouts            = &renderData.gpuSceneDataLayout;
+  pipelineLayoutInfo.pushConstantRangeCount = 1;
   pipelineLayoutInfo.pPushConstantRanges    = pushConstantRanges;
 
-  vkAssert(core.dispatch.createPipelineLayout(&pipelineLayoutInfo, nullptr,
-                                              &renderData.pipelineLayout));
+  VK_ASSERT(core.dispatch.createPipelineLayout(&pipelineLayoutInfo, nullptr,
+                                               &renderData.pipelineLayout));
 
   PipelineBuilder pipelineBuilder =
       PipelineBuilder(core.dispatch)
@@ -525,6 +525,14 @@ void Engine::drawImGUI(VkCommandBuffer cmd, VkImageView targetImage) {
   ImGui::Begin("IMGUI BABY");
   ImGui::Text("slide:");
   ImGui::ColorEdit3("BGCOLOR", glm::value_ptr(renderData.backgroundColor));
+
+  if (ImGui::CollapsingHeader("Entities")) {
+    for (int i = 0; i < entities.size(); i++) {
+      std::string label = "e" + std::to_string(i);
+
+      ImGui::ColorEdit4(label.c_str(), glm::value_ptr(entities[i].color));
+    }
+  }
   ImGui::SliderFloat("Render Scale", &renderData.renderScale, 0.1, 1.f);
 
   ImGui::End();
@@ -553,8 +561,10 @@ void Engine::drawImGUI(VkCommandBuffer cmd, VkImageView targetImage) {
 
 void Engine::prepareFrame() {
 
-  vkAssert(core.dispatch.waitForFences(1, &getCurrentFrame().renderFence, true,
-                                       1'000'000'000));
+  VK_ASSERT(core.dispatch.waitForFences(1, &getCurrentFrame().renderFence, true,
+                                        1'000'000'000));
+
+  getCurrentFrame().frameDescriptors.clearPools();
 
   VkAcquireNextImageInfoKHR acquireInfo = {};
   acquireInfo.sType      = VK_STRUCTURE_TYPE_ACQUIRE_NEXT_IMAGE_INFO_KHR;
@@ -571,7 +581,7 @@ void Engine::prepareFrame() {
     return;
   }
 
-  vkAssert(core.dispatch.resetFences(1, &getCurrentFrame().renderFence));
+  VK_ASSERT(core.dispatch.resetFences(1, &getCurrentFrame().renderFence));
 
   renderData.drawExtent.width =
       std::min(swapchain.extent.width, renderData.drawImage.extent.height) *
@@ -581,20 +591,20 @@ void Engine::prepareFrame() {
       renderData.renderScale;
 
   VkCommandBuffer cmd = getCurrentFrame().commandBuffer;
-  vkAssert(core.dispatch.resetCommandBuffer(cmd, 0));
+  VK_ASSERT(core.dispatch.resetCommandBuffer(cmd, 0));
 
   VkCommandBufferBeginInfo cmdBeginInfo = {};
   cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
   cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-  vkAssert(core.dispatch.beginCommandBuffer(cmd, &cmdBeginInfo));
+  VK_ASSERT(core.dispatch.beginCommandBuffer(cmd, &cmdBeginInfo));
 }
 
 void Engine::submitFrame() {
 
   VkCommandBuffer cmd = getCurrentFrame().commandBuffer;
 
-  vkAssert(core.dispatch.endCommandBuffer(cmd));
+  VK_ASSERT(core.dispatch.endCommandBuffer(cmd));
 
   // command is ready for submission
   VkCommandBufferSubmitInfo submitInfo = {};
@@ -623,8 +633,8 @@ void Engine::submitFrame() {
   submit.signalSemaphoreInfoCount = 1;
   submit.pSignalSemaphoreInfos    = &signalInfo;
 
-  vkAssert(core.dispatch.queueSubmit2(core.graphicsQueue, 1, &submit,
-                                      getCurrentFrame().renderFence));
+  VK_ASSERT(core.dispatch.queueSubmit2(core.graphicsQueue, 1, &submit,
+                                       getCurrentFrame().renderFence));
 
   // prepare present
   VkPresentInfoKHR presentInfo = {};
@@ -646,37 +656,47 @@ void Engine::submitFrame() {
 }
 
 void Engine::initDescriptors() {
-  auto* descAllocator            = &renderData.descriptorAllocator;
-  renderData.descriptorAllocator = {core.dispatch};
-  renderData.descriptorAllocator.setupLayouts();
-  renderData.descriptorAllocator.setupPools();
+
+  std::vector<DescriptorAllocator::PoolSizeRatio> sizes = {
+      {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
+  };
+  renderData.descriptorAllocator.init(core.dispatch, 10, sizes);
+  renderData.descriptorWriter = {core.dispatch};
 
   for (u32 i = 0; i < FRAMES_IN_FLIGHT; i++) {
+    std::vector<DescriptorAllocator::PoolSizeRatio> frameSizes = {
+        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3},
+    };
 
-    VkDescriptorSetAllocateInfo allocInfo = {};
-    allocInfo.sType          = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = descAllocator->descriptorPool;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts        = descAllocator->descriptorSetLayouts.data();
+    renderData.frames[i].frameDescriptors = DescriptorAllocator{};
+    renderData.frames[i].frameDescriptors.init(core.dispatch, 1024, frameSizes);
 
-    vkAssert(core.dispatch.allocateDescriptorSets(
-        &allocInfo, &descAllocator->descriptorSets[i]));
+    // TODO: add descriptor pools to vulkan destroyer
 
-    VkDescriptorBufferInfo cameraBufferInfo{};
-    cameraBufferInfo.buffer = renderData.cameraBuffers[i].buffer;
-    cameraBufferInfo.offset = 0;
-    cameraBufferInfo.range  = sizeof(CameraUBO);
+    VkDescriptorSetLayoutBinding bindings[] = {
+        {.binding            = 0,
+         .descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+         .descriptorCount    = 1,
+         .stageFlags         = VK_SHADER_STAGE_VERTEX_BIT,
+         .pImmutableSamplers = nullptr}};
 
-    VkWriteDescriptorSet descriptorWrite = {};
-    descriptorWrite.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet          = descAllocator->descriptorSets[i];
-    descriptorWrite.dstBinding      = 0;
-    descriptorWrite.dstArrayElement = 0;
-    descriptorWrite.descriptorCount = 1;
-    descriptorWrite.descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptorWrite.pBufferInfo     = &cameraBufferInfo;
+    VkDescriptorSetLayoutCreateInfo layoutInfo = {};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings    = bindings;
 
-    core.dispatch.updateDescriptorSets(1, &descriptorWrite, 0, nullptr);
+    VK_ASSERT(core.dispatch.createDescriptorSetLayout(
+        &layoutInfo, nullptr, &renderData.gpuSceneDataLayout));
+
+    renderData.imageDescriptorSet = renderData.descriptorAllocator.allocate(
+        renderData.gpuSceneDataLayout, nullptr);
+
+    renderData.descriptorWriter.writeBuffer(
+        0, renderData.cameraBuffer.buffer,
+        renderData.cameraBuffer.allocation->GetSize(), 0,
+        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+
+    renderData.descriptorWriter.updateSet(renderData.imageDescriptorSet);
   }
 }
 
@@ -728,7 +748,7 @@ void Engine::draw() {
 
 void Engine::drawBackground(VkCommandBuffer cmd) {
 
-  VkClearColorValue bg = {
+  VkClearColorValue bg       = {
       renderData.backgroundColor.r, renderData.backgroundColor.g,
       renderData.backgroundColor.b, renderData.backgroundColor.a};
 
@@ -770,18 +790,14 @@ void Engine::drawGeometry(VkCommandBuffer cmd) {
   core.dispatch.cmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 renderData.pipeline);
 
-  CameraUBO* mapped =
-      (CameraUBO*)renderData
-          .cameraBuffers[renderData.frameNumber % FRAMES_IN_FLIGHT]
-          .allocation->GetMappedData();
+  GPUSceneData* mapped =
+      (GPUSceneData*)renderData.cameraBuffer.allocation->GetMappedData();
   mapped->view       = camera.getViewMatrix();
   mapped->projection = camera.getProjectionMatrix();
 
   core.dispatch.cmdBindDescriptorSets(
       cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, renderData.pipelineLayout, 0, 1,
-      &renderData.descriptorAllocator
-           .descriptorSets[renderData.frameNumber % FRAMES_IN_FLIGHT],
-      0, nullptr);
+      &renderData.imageDescriptorSet, 0, nullptr);
 
   VkViewport viewport = {};
 
@@ -802,10 +818,9 @@ void Engine::drawGeometry(VkCommandBuffer cmd) {
 
   for (size_t i = 0; i < entities.size(); i++) {
 
-
     VertPushData mesh        = {};
     mesh.model               = entities[i].model;
-    mesh.color               = {};
+    mesh.color               = entities[i].color;
     mesh.vertexBufferAddress = entities[i].mesh.meshBuffers.vertexBufferAddress;
 
     VkPushConstantsInfo vertPushInfo = {};
@@ -820,7 +835,8 @@ void Engine::drawGeometry(VkCommandBuffer cmd) {
                                    vertPushInfo.stageFlags, vertPushInfo.offset,
                                    vertPushInfo.size, vertPushInfo.pValues);
 
-    core.dispatch.cmdBindIndexBuffer(cmd, entities[i].mesh.getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
+    core.dispatch.cmdBindIndexBuffer(cmd, entities[i].mesh.getIndexBuffer(), 0,
+                                     VK_INDEX_TYPE_UINT32);
 
     core.dispatch.cmdDrawIndexed(cmd, entities[i].mesh.surfaces[0].count, 1,
                                  entities[i].mesh.surfaces[0].startIndex, 0, 0);
@@ -829,9 +845,8 @@ void Engine::drawGeometry(VkCommandBuffer cmd) {
   core.dispatch.cmdEndRendering(cmd);
 }
 
-AllocatedBuffer Engine::allocateBuffer(size_t             allocSize,
-                                       VkBufferUsageFlags usage,
-                                       VmaMemoryUsage     memoryUsage) {
+AllocatedBuffer Engine::createBuffer(size_t allocSize, VkBufferUsageFlags usage,
+                                     VmaMemoryUsage memoryUsage) {
 
   VkBufferCreateInfo bufferInfo = {};
   bufferInfo.sType              = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -844,9 +859,9 @@ AllocatedBuffer Engine::allocateBuffer(size_t             allocSize,
 
   AllocatedBuffer newBuffer;
 
-  vkAssert(vmaCreateBuffer(core.allocator, &bufferInfo, &vmaAllocInfo,
-                           &newBuffer.buffer, &newBuffer.allocation,
-                           &newBuffer.allocationInfo));
+  VK_ASSERT(vmaCreateBuffer(core.allocator, &bufferInfo, &vmaAllocInfo,
+                            &newBuffer.buffer, &newBuffer.allocation,
+                            &newBuffer.allocationInfo));
 
   vulkanDestroyer.addAllocatedBuffer(newBuffer);
   return newBuffer;
@@ -858,7 +873,7 @@ GPUMeshBuffers Engine::uploadMesh(std::span<u32>    indices,
   const size_t   indexBufferSize  = indices.size() * sizeof(u32);
   GPUMeshBuffers newSurface;
 
-  newSurface.vertexBuffer = allocateBuffer(
+  newSurface.vertexBuffer = createBuffer(
       vertexBufferSize,
       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
           VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
@@ -870,22 +885,22 @@ GPUMeshBuffers Engine::uploadMesh(std::span<u32>    indices,
   newSurface.vertexBufferAddress =
       core.dispatch.getBufferDeviceAddress(&deviceAddressInfo);
 
-  newSurface.indexBuffer = allocateBuffer(indexBufferSize,
-                                          VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
-                                              VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                          VMA_MEMORY_USAGE_GPU_ONLY);
+  newSurface.indexBuffer = createBuffer(indexBufferSize,
+                                        VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+                                            VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                        VMA_MEMORY_USAGE_GPU_ONLY);
 
-  AllocatedBuffer staging = allocateBuffer(vertexBufferSize + indexBufferSize,
-                                           VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                           VMA_MEMORY_USAGE_CPU_ONLY);
+  AllocatedBuffer staging =
+      createBuffer(vertexBufferSize + indexBufferSize,
+                   VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
 
   auto data = static_cast<u8*>(staging.allocation->GetMappedData());
   memcpy(data, vertices.data(), vertexBufferSize);
   memcpy(data + vertexBufferSize, indices.data(), indexBufferSize);
 
   // immediate submit
-  vkAssert(core.dispatch.resetFences(1, &immediateData.fence));
-  vkAssert(core.dispatch.resetCommandBuffer(immediateData.commandBuffer, 0));
+  VK_ASSERT(core.dispatch.resetFences(1, &immediateData.fence));
+  VK_ASSERT(core.dispatch.resetCommandBuffer(immediateData.commandBuffer, 0));
 
   VkCommandBuffer cmd = immediateData.commandBuffer;
 
@@ -893,7 +908,7 @@ GPUMeshBuffers Engine::uploadMesh(std::span<u32>    indices,
   cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
   cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-  vkAssert(core.dispatch.beginCommandBuffer(cmd, &cmdBeginInfo));
+  VK_ASSERT(core.dispatch.beginCommandBuffer(cmd, &cmdBeginInfo));
 
   VkBufferCopy2 vertexCopy = {};
   vertexCopy.sType         = VK_STRUCTURE_TYPE_BUFFER_COPY_2;
@@ -922,7 +937,7 @@ GPUMeshBuffers Engine::uploadMesh(std::span<u32>    indices,
 
   core.dispatch.cmdCopyBuffer2(cmd, &indexCopyInfo);
 
-  vkAssert(core.dispatch.endCommandBuffer(cmd));
+  VK_ASSERT(core.dispatch.endCommandBuffer(cmd));
 
   VkCommandBufferSubmitInfo cmdSubmitInfo = {};
   cmdSubmitInfo.sType         = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
@@ -933,9 +948,10 @@ GPUMeshBuffers Engine::uploadMesh(std::span<u32>    indices,
   submit.commandBufferInfoCount = 1;
   submit.pCommandBufferInfos    = &cmdSubmitInfo;
 
-  vkAssert(core.dispatch.queueSubmit2(core.graphicsQueue, 1, &submit,
-                                      immediateData.fence));
-  vkAssert(core.dispatch.waitForFences(1, &immediateData.fence, true, U64_MAX));
+  VK_ASSERT(core.dispatch.queueSubmit2(core.graphicsQueue, 1, &submit,
+                                       immediateData.fence));
+  VK_ASSERT(
+      core.dispatch.waitForFences(1, &immediateData.fence, true, U64_MAX));
 
   vmaDestroyBuffer(core.allocator, staging.buffer, staging.allocation);
 
@@ -944,17 +960,21 @@ GPUMeshBuffers Engine::uploadMesh(std::span<u32>    indices,
 
 void Engine::initEntities() {
 
-  MeshAsset meshAsset = leafGltf::loadGltfMesh("assets/planet.gltf");
+  MeshAsset planetAsset = leafGltf::loadGltfMesh("assets/planet.gltf");
+  MeshAsset teapotAsset = leafGltf::loadGltfMesh("assets/teapot.gltf");
 
-  GPUMeshBuffers gltfMesh = uploadMesh(meshAsset.indices, meshAsset.vertices);
+  GPUMeshBuffers planetMesh =
+      uploadMesh(planetAsset.indices, planetAsset.vertices);
+  GPUMeshBuffers teapotMesh =
+      uploadMesh(teapotAsset.indices, teapotAsset.vertices);
 
-  for (u32 i = 0; i < 1; i++) {
+  for (u32 i = 0; i < 4; i++) {
     Entity entity;
-    entity.position         = glm::vec3(0);
+    entity.position         = glm::vec3(i * 3);
     entity.rotation         = glm::vec3(0);
     entity.scale            = glm::vec3(1);
-    entity.mesh             = meshAsset;
-    entity.mesh.meshBuffers = gltfMesh;
+    entity.mesh             = planetAsset;
+    entity.mesh.meshBuffers = planetMesh;
 
     glm::mat4 model = glm::mat4(1.f);
 
@@ -1002,11 +1022,11 @@ void Engine::initCamera() {
   camera.frames = FRAMES_IN_FLIGHT;
 
   camera.aspectRatio = swapchain.extent.width / (f32)swapchain.extent.height;
-  renderData.cameraBuffers = std::vector<AllocatedBuffer>(FRAMES_IN_FLIGHT);
+  renderData.cameraBuffer = {};
   for (size_t i = 0; i < FRAMES_IN_FLIGHT; i++) {
-    renderData.cameraBuffers[i] =
-        allocateBuffer(sizeof(CameraUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                       VMA_MEMORY_USAGE_CPU_TO_GPU);
+    renderData.cameraBuffer =
+        createBuffer(sizeof(GPUSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                     VMA_MEMORY_USAGE_CPU_TO_GPU);
   }
 }
 

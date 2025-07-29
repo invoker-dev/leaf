@@ -5,7 +5,7 @@
 #include <fmt/base.h>
 #include <fmt/core.h>
 #include <vulkan/vk_enum_string_helper.h>
-inline void vkAssert(VkResult result) {
+inline void VK_ASSERT(VkResult result) {
   if (result == VK_SUBOPTIMAL_KHR) {
     // fmt::println("suboptimal: {}", string_VkResult(result));
   } else if (result != VK_SUCCESS) {
