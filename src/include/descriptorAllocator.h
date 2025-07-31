@@ -8,8 +8,6 @@
 
 class DescriptorAllocator {
 public:
-
-  DescriptorAllocator(){};
   struct PoolSizeRatio {
     VkDescriptorType type;
     float            ratio;

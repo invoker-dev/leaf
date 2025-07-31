@@ -14,6 +14,15 @@ inline void VK_ASSERT(VkResult result) {
   }
 }
 
+inline void VK_IMGUI_ASSERT(VkResult result) {
+  if (result == VK_SUBOPTIMAL_KHR) {
+    // fmt::println("suboptimal: {}", string_VkResult(result));
+  } else if (result != VK_SUCCESS) {
+    fmt::println("Detected IMGUI::Vulkan error: {}", string_VkResult(result));
+    std::abort();
+  }
+}
+
 namespace leafUtil {
 void transitionImage(VkCommandBuffer cmd, VkImage image,
                      VkImageLayout currentLayout, VkImageLayout newLayout);

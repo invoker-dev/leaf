@@ -57,19 +57,14 @@ struct VulkanRenderData {
   VkExtent2D               drawExtent;
   f32                      renderScale = 1.f;
   AllocatedImage           depthImage;
-  AllocatedBuffer          cameraBuffer;
   VkPipeline               pipeline;
   VkPipelineLayout         pipelineLayout;
   std::vector<VkSemaphore> renderFinishedSemaphores;
   glm::vec4                backgroundColor;
   glm::vec4                entityColor;
 
-  DescriptorAllocator descriptorAllocator;
-  DescriptorWriter    descriptorWriter;
-
   GPUSceneData          sceneData;
   VkDescriptorSetLayout gpuSceneDataLayout;
-  VkDescriptorSet       imageDescriptorSet;
 };
 
 class Engine {
@@ -105,7 +100,7 @@ public:
   void initImGUI();
   void initPipeline();
   void initEntities();
-  void initCamera();
+  void initSceneData();
 
   void prepareFrame();
   void submitFrame();

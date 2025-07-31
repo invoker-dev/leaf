@@ -1,6 +1,7 @@
 #include "VkBootstrapDispatch.h"
 #include <descriptorAllocator.h>
 #include <fcntl.h>
+#include <fmt/base.h>
 #include <leafInit.h>
 #include <leafStructs.h>
 #include <leafUtil.h>
@@ -48,7 +49,10 @@ void DescriptorAllocator::init(vkb::DispatchTable const& dispatch,
   setsPerPool              = initialSets *= 1.5;
 
   readyPools.push_back(newPool);
+
+  fmt::println("init: {}", readyPools.size());
 }
+
 void DescriptorAllocator::clearPools() {
   for (auto p : readyPools) {
     dispatch.resetDescriptorPool(p, 0);
@@ -77,12 +81,14 @@ VkDescriptorPool DescriptorAllocator::getPool() {
     newPool = readyPools.back();
     readyPools.pop_back();
   } else {
-    newPool     = createPool(setsPerPool, ratios);
+    newPool = createPool(setsPerPool, ratios);
     setsPerPool *= 1.5;
     if (setsPerPool > (maxSetCount)) {
       setsPerPool = maxSetCount;
     }
   }
+  fmt::println("Pool status: \n ready: {} \n full: {} \n", readyPools.size(),
+               fullPools.size());
   return newPool;
 }
 
@@ -106,6 +112,6 @@ DescriptorAllocator::createPool(u32                      setCount,
   poolInfo.pPoolSizes    = poolSizes.data();
 
   VkDescriptorPool newPool;
-  dispatch.createDescriptorPool(&poolInfo, nullptr, &newPool);
+  VK_ASSERT(dispatch.createDescriptorPool(&poolInfo, nullptr, &newPool));
   return newPool;
 }

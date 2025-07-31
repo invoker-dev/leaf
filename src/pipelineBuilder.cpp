@@ -78,6 +78,7 @@ VkPipeline PipelineBuilder::build() const {
   VkPipeline newPipeline;
   VK_ASSERT(dispatch.createGraphicsPipelines(VK_NULL_HANDLE, 1, &pipelineInfo,
                                             nullptr, &newPipeline));
+
   return newPipeline;
 }
 

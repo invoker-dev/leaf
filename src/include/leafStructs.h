@@ -1,6 +1,8 @@
 #pragma once
 
 #include <VkBootstrap.h>
+#include <constants.h>
+#include <descriptorAllocator.h>
 #include <glm/ext/vector_float2.hpp>
 #include <glm/ext/vector_float4.hpp>
 #include <glm/mat4x4.hpp>
@@ -9,8 +11,6 @@
 #include <types.h>
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan_core.h>
-#include <constants.h>
-#include <descriptorAllocator.h>
 
 struct AllocatedImage {
   VkImage       image;
@@ -20,12 +20,21 @@ struct AllocatedImage {
   VkFormat      format;
 };
 
+struct AllocatedBuffer {
+  VkBuffer          buffer;
+  VmaAllocation     allocation;
+  VmaAllocationInfo allocationInfo;
+};
+
 struct FrameData {
-  VkCommandPool               commandPool;
-  VkCommandBuffer             commandBuffer;
-  VkFence                     renderFence;
-  VkSemaphore                 imageAvailableSemaphore;
-  DescriptorAllocator frameDescriptors;
+  VkCommandPool       commandPool;
+  VkCommandBuffer     commandBuffer;
+  VkFence             renderFence;
+  VkSemaphore         imageAvailableSemaphore;
+  DescriptorAllocator descriptors;
+  VkDescriptorSet     descriptorSet;
+
+  AllocatedBuffer     gpuBuffer;
 };
 
 struct ImmediateData {
@@ -40,13 +49,7 @@ struct ImguiContext {
   VkCommandBuffer  commandBuffer;
 };
 
-struct AllocatedBuffer {
-  VkBuffer          buffer;
-  VmaAllocation     allocation;
-  VmaAllocationInfo allocationInfo;
-};
-
-// types
+// other stuff
 
 struct Vertex {
   glm::vec3 position;
@@ -62,17 +65,14 @@ struct GPUMeshBuffers {
   VkDeviceAddress vertexBufferAddress;
 };
 
-struct VertPushData {
+struct alignas(16) VertPushData {
   glm::mat4       model;
   glm::vec4       color;
+  f32             blendFactor;
   VkDeviceAddress vertexBufferAddress;
 };
 
-struct FragPushData {
-  glm::vec4 color;
-};
-
-struct GPUSceneData {
+struct alignas(16) GPUSceneData {
   glm::mat4 view;
   glm::mat4 projection;
   // glm::vec4 ambientColor;

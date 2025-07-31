@@ -1,14 +1,13 @@
 // Actual todo
-// TODO :: glTF loading
+// TODO :: glTF loading fix
 // TODO :: fix the pipelines for multiple shaders
-
 // TODO: Stencil Testing
-// TODO: Blending / transparency
 // TODO: mipmapping, texturesampling
 // TODO: Lighting
 // TODO: Normal maps
 // TODO: Various Post processing
 // CONTINOUS TODO: Real Architecture
+#include "descriptorAllocator.h"
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_gpu.h>
@@ -40,6 +39,7 @@
 #include <leafUtil.h>
 #include <pipelineBuilder.h>
 #include <string>
+#include <unistd.h>
 #include <vector>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_wayland.h>
@@ -63,7 +63,7 @@ Engine::Engine() {
   initSynchronization();
 
   // TODO: This order is not fine
-  initCamera();
+  initSceneData();
 
   initDescriptors();
   initImGUI();
@@ -451,7 +451,7 @@ void Engine::initImGUI() {
       &swapchain.imageFormat;
   initInfo.MSAASamples     = VK_SAMPLE_COUNT_1_BIT;
   initInfo.Allocator       = nullptr;
-  initInfo.CheckVkResultFn = VK_ASSERT;
+  initInfo.CheckVkResultFn = VK_IMGUI_ASSERT;
 
   if (!ImGui_ImplSDL3_InitForVulkan(surface.window)) {
     fmt::println("ImGui_ImplSDL3_InitForVulkan failed");
@@ -503,6 +503,7 @@ void Engine::initPipeline() {
           .setCullMode(VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE)
           .disableMultiSampling()
           .enableBlendingAlphaBlend()
+          // .enableBlendingAdditive()
           .setDepthTest(true)
           .setColorAttachmentFormat(renderData.drawImage.format);
 
@@ -528,9 +529,10 @@ void Engine::drawImGUI(VkCommandBuffer cmd, VkImageView targetImage) {
 
   if (ImGui::CollapsingHeader("Entities")) {
     for (int i = 0; i < entities.size(); i++) {
-      std::string label = "e" + std::to_string(i);
-
+      std::string label  = "e" + std::to_string(i);
+      std::string tlabel = "tint" + std::to_string(i);
       ImGui::ColorEdit4(label.c_str(), glm::value_ptr(entities[i].color));
+      ImGui::SliderFloat(tlabel.c_str(), &entities[i].tint, 0.f, 1.f);
     }
   }
   ImGui::SliderFloat("Render Scale", &renderData.renderScale, 0.1, 1.f);
@@ -564,7 +566,7 @@ void Engine::prepareFrame() {
   VK_ASSERT(core.dispatch.waitForFences(1, &getCurrentFrame().renderFence, true,
                                         1'000'000'000));
 
-  getCurrentFrame().frameDescriptors.clearPools();
+  getCurrentFrame().descriptors.clearPools();
 
   VkAcquireNextImageInfoKHR acquireInfo = {};
   acquireInfo.sType      = VK_STRUCTURE_TYPE_ACQUIRE_NEXT_IMAGE_INFO_KHR;
@@ -657,46 +659,40 @@ void Engine::submitFrame() {
 
 void Engine::initDescriptors() {
 
-  std::vector<DescriptorAllocator::PoolSizeRatio> sizes = {
-      {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
+  std::vector<DescriptorAllocator::PoolSizeRatio> frameSizes = {
+      {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3},
   };
-  renderData.descriptorAllocator.init(core.dispatch, 10, sizes);
-  renderData.descriptorWriter = {core.dispatch};
+
+  // TODO: add descriptor pools to vulkan destroyer
+
+  VkDescriptorSetLayoutBinding bindings[] = {
+      {.binding            = 0,
+       .descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+       .descriptorCount    = 1,
+       .stageFlags         = VK_SHADER_STAGE_VERTEX_BIT,
+       .pImmutableSamplers = nullptr}};
+
+  VkDescriptorSetLayoutCreateInfo layoutInfo = {};
+  layoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+  layoutInfo.bindingCount = 1;
+  layoutInfo.pBindings    = bindings;
+
+  VK_ASSERT(core.dispatch.createDescriptorSetLayout(
+      &layoutInfo, nullptr, &renderData.gpuSceneDataLayout));
 
   for (u32 i = 0; i < FRAMES_IN_FLIGHT; i++) {
-    std::vector<DescriptorAllocator::PoolSizeRatio> frameSizes = {
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3},
-    };
+    renderData.frames[i].descriptors.init(core.dispatch, 10, frameSizes);
+    renderData.frames[i].descriptorSet =
+        renderData.frames[i].descriptors.allocate(renderData.gpuSceneDataLayout,
+                                                  nullptr);
 
-    renderData.frames[i].frameDescriptors = DescriptorAllocator{};
-    renderData.frames[i].frameDescriptors.init(core.dispatch, 1024, frameSizes);
+    DescriptorWriter writer;
+    writer.init(core.dispatch);
+    writer.writeBuffer(0, renderData.frames[i].gpuBuffer.buffer,
+                       sizeof(GPUSceneData), 0,
+                       VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
-    // TODO: add descriptor pools to vulkan destroyer
-
-    VkDescriptorSetLayoutBinding bindings[] = {
-        {.binding            = 0,
-         .descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-         .descriptorCount    = 1,
-         .stageFlags         = VK_SHADER_STAGE_VERTEX_BIT,
-         .pImmutableSamplers = nullptr}};
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo = {};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 1;
-    layoutInfo.pBindings    = bindings;
-
-    VK_ASSERT(core.dispatch.createDescriptorSetLayout(
-        &layoutInfo, nullptr, &renderData.gpuSceneDataLayout));
-
-    renderData.imageDescriptorSet = renderData.descriptorAllocator.allocate(
-        renderData.gpuSceneDataLayout, nullptr);
-
-    renderData.descriptorWriter.writeBuffer(
-        0, renderData.cameraBuffer.buffer,
-        renderData.cameraBuffer.allocation->GetSize(), 0,
-        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-
-    renderData.descriptorWriter.updateSet(renderData.imageDescriptorSet);
+    writer.updateSet(renderData.frames[i].descriptorSet);
   }
 }
 
@@ -748,7 +744,7 @@ void Engine::draw() {
 
 void Engine::drawBackground(VkCommandBuffer cmd) {
 
-  VkClearColorValue bg       = {
+  VkClearColorValue bg = {
       renderData.backgroundColor.r, renderData.backgroundColor.g,
       renderData.backgroundColor.b, renderData.backgroundColor.a};
 
@@ -765,7 +761,7 @@ void Engine::drawGeometry(VkCommandBuffer cmd) {
   colorAttachment.sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
   colorAttachment.imageView   = renderData.drawImage.imageView;
   colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-  colorAttachment.loadOp      = VK_ATTACHMENT_LOAD_OP_CLEAR;
+  colorAttachment.loadOp      = VK_ATTACHMENT_LOAD_OP_LOAD;
   colorAttachment.storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
   colorAttachment.clearValue  = {};
 
@@ -791,13 +787,24 @@ void Engine::drawGeometry(VkCommandBuffer cmd) {
                                 renderData.pipeline);
 
   GPUSceneData* mapped =
-      (GPUSceneData*)renderData.cameraBuffer.allocation->GetMappedData();
+      (GPUSceneData*)getCurrentFrame().gpuBuffer.allocation->GetMappedData();
   mapped->view       = camera.getViewMatrix();
   mapped->projection = camera.getProjectionMatrix();
 
+  getCurrentFrame().descriptorSet = getCurrentFrame().descriptors.allocate(
+      renderData.gpuSceneDataLayout, nullptr);
+
+  DescriptorWriter writer;
+  writer.init(core.dispatch);
+  writer.writeBuffer(0, getCurrentFrame().gpuBuffer.buffer,
+                     sizeof(GPUSceneData), 0,
+                     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+
+  writer.updateSet(getCurrentFrame().descriptorSet);
+
   core.dispatch.cmdBindDescriptorSets(
       cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, renderData.pipelineLayout, 0, 1,
-      &renderData.imageDescriptorSet, 0, nullptr);
+      &getCurrentFrame().descriptorSet, 0, nullptr);
 
   VkViewport viewport = {};
 
@@ -821,6 +828,7 @@ void Engine::drawGeometry(VkCommandBuffer cmd) {
     VertPushData mesh        = {};
     mesh.model               = entities[i].model;
     mesh.color               = entities[i].color;
+    mesh.blendFactor         = entities[i].tint;
     mesh.vertexBufferAddress = entities[i].mesh.meshBuffers.vertexBufferAddress;
 
     VkPushConstantsInfo vertPushInfo = {};
@@ -961,18 +969,20 @@ GPUMeshBuffers Engine::uploadMesh(std::span<u32>    indices,
 void Engine::initEntities() {
 
   MeshAsset planetAsset = leafGltf::loadGltfMesh("assets/planet.gltf");
-  MeshAsset teapotAsset = leafGltf::loadGltfMesh("assets/teapot.gltf");
+  // MeshAsset teapotAsset = leafGltf::loadGltfMesh("assets/teapot.gltf");
 
   GPUMeshBuffers planetMesh =
       uploadMesh(planetAsset.indices, planetAsset.vertices);
-  GPUMeshBuffers teapotMesh =
-      uploadMesh(teapotAsset.indices, teapotAsset.vertices);
+  // GPUMeshBuffers teapotMesh =
+  //     uploadMesh(teapotAsset.indices, teapotAsset.vertices);
 
-  for (u32 i = 0; i < 4; i++) {
+  for (u32 i = 0; i < 1; i++) {
     Entity entity;
     entity.position         = glm::vec3(i * 3);
     entity.rotation         = glm::vec3(0);
     entity.scale            = glm::vec3(1);
+    entity.color            = glm::vec4();
+    entity.tint             = 0;
     entity.mesh             = planetAsset;
     entity.mesh.meshBuffers = planetMesh;
 
@@ -1017,14 +1027,13 @@ void Engine::update(f64 dt) {
   camera.update(dt);
 }
 
-void Engine::initCamera() {
-  camera        = Camera{};
-  camera.frames = FRAMES_IN_FLIGHT;
+void Engine::initSceneData() {
+  camera = Camera{};
 
   camera.aspectRatio = swapchain.extent.width / (f32)swapchain.extent.height;
-  renderData.cameraBuffer = {};
   for (size_t i = 0; i < FRAMES_IN_FLIGHT; i++) {
-    renderData.cameraBuffer =
+
+    renderData.frames[i].gpuBuffer =
         createBuffer(sizeof(GPUSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                      VMA_MEMORY_USAGE_CPU_TO_GPU);
   }

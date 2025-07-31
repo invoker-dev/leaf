@@ -11,7 +11,8 @@ struct Entity {
   glm::vec3 position;
   glm::vec3 rotation;
   glm::vec3 scale;
-  glm::vec4  color;
+  glm::vec4 color;
+  f32       tint;
   glm::mat4 model;
   u32       type;
 };

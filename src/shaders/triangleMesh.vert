@@ -25,6 +25,7 @@ layout(push_constant) uniform constants
 {
     mat4 model;
     vec4 color;
+    float blendFactor;
     VertexBuffer vertexBuffer;
 } pushConstants;
 
@@ -36,7 +37,7 @@ void main()
     //output data
     gl_Position = camera.projection * camera.view * pushConstants.model *
             vec4(v.position, 1.f);
-    outColor = v.color - pushConstants.color;
+    outColor = mix(v.color, pushConstants.color, pushConstants.blendFactor);
     outUV.x = v.uv_x;
     outUV.y = v.uv_y;
 }
