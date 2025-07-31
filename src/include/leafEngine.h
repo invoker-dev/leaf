@@ -67,6 +67,21 @@ struct VulkanRenderData {
   VkDescriptorSetLayout gpuSceneDataLayout;
 };
 
+struct TextureData {
+  AllocatedImage whiteImage;
+  AllocatedImage blackImage;
+  AllocatedImage greyImage;
+  AllocatedImage errorImage;
+
+  VkSampler samplerLinear;
+  VkSampler samplerNearest;
+
+  VkDescriptorSetLayout textureDescriptorLayout;
+  VkDescriptorSet       textureSet;
+
+  DescriptorAllocator descriptors;
+};
+
 class Engine {
 public:
   Engine();
@@ -80,6 +95,7 @@ public:
   VulkanSurface    surface;
   VulkanSwapchain  swapchain;
   VulkanRenderData renderData;
+  TextureData      textureData;
 
   VulkanDestroyer vulkanDestroyer;
 
@@ -113,11 +129,11 @@ public:
   AllocatedBuffer createBuffer(size_t allocSize, VkBufferUsageFlags usage,
                                VmaMemoryUsage memoryUsage);
 
-  AllocatedImage  createImage(VkExtent3D size, VkFormat format,
-                              VkImageUsageFlags usage, bool mipmapped = false);
+  AllocatedImage createImage(VkExtent3D extent, VkFormat format,
+                             VkImageUsageFlags usage, bool mipmapped = false);
 
-  AllocatedImage  createImage(void* data, VkExtent3D size, VkFormat format,
-                              VkImageUsageFlags usage, bool mipmapped = false);
+  AllocatedImage createImage(void* data, VkExtent3D extent, VkFormat format,
+                             VkImageUsageFlags usage, bool mipmapped = false);
 
   GPUMeshBuffers uploadMesh(std::span<u32> indices, std::span<Vertex> vertices);
 

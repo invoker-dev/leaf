@@ -7,7 +7,6 @@
 // TODO: Normal maps
 // TODO: Various Post processing
 // CONTINOUS TODO: Real Architecture
-#include "descriptorAllocator.h"
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_gpu.h>
@@ -21,12 +20,14 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
+#include <descriptorAllocator.h>
 #include <fmt/base.h>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/ext/vector_float3.hpp>
 #include <glm/ext/vector_float4.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/packing.hpp>
 #include <glm/trigonometric.hpp>
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
@@ -44,6 +45,7 @@
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_wayland.h>
 #define VMA_IMPLEMENTATION
+#include <glm/mat4x4.hpp>
 #include <vk_mem_alloc.h>
 
 namespace LeafEngine {
@@ -476,6 +478,7 @@ void Engine::initPipeline() {
   pushConstantRanges[0].size       = sizeof(VertPushData);
   pushConstantRanges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
+  VkDescriptorSetLayout layouts[] = {renderData.gpuSceneDataLayout};
   // // align by 16 bytes
   // constexpr size_t fragOffset      = (sizeof(VertPushData) + 15) & ~15;
   // pushConstantRanges[1].offset     = fragOffset;
@@ -486,7 +489,7 @@ void Engine::initPipeline() {
   pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
   pipelineLayoutInfo.flags = 0;
   pipelineLayoutInfo.setLayoutCount         = 1;
-  pipelineLayoutInfo.pSetLayouts            = &renderData.gpuSceneDataLayout;
+  pipelineLayoutInfo.pSetLayouts            = layouts;
   pipelineLayoutInfo.pushConstantRangeCount = 1;
   pipelineLayoutInfo.pPushConstantRanges    = pushConstantRanges;
 
@@ -566,7 +569,7 @@ void Engine::prepareFrame() {
   VK_ASSERT(core.dispatch.waitForFences(1, &getCurrentFrame().renderFence, true,
                                         1'000'000'000));
 
-  getCurrentFrame().descriptors.clearPools();
+  // getCurrentFrame().descriptors.clearPools();
 
   VkAcquireNextImageInfoKHR acquireInfo = {};
   acquireInfo.sType      = VK_STRUCTURE_TYPE_ACQUIRE_NEXT_IMAGE_INFO_KHR;
@@ -658,39 +661,50 @@ void Engine::submitFrame() {
 }
 
 void Engine::initDescriptors() {
-
   std::vector<DescriptorAllocator::PoolSizeRatio> frameSizes = {
       {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3},
+      {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3},
   };
 
-  // TODO: add descriptor pools to vulkan destroyer
+  VkDescriptorSetLayoutBinding bindings[2] = {};
 
-  VkDescriptorSetLayoutBinding bindings[] = {
-      {.binding            = 0,
-       .descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-       .descriptorCount    = 1,
-       .stageFlags         = VK_SHADER_STAGE_VERTEX_BIT,
-       .pImmutableSamplers = nullptr}};
+  bindings[0].binding            = 0;
+  bindings[0].descriptorType     = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  bindings[0].descriptorCount    = 1;
+  bindings[0].stageFlags         = VK_SHADER_STAGE_VERTEX_BIT;
+  bindings[0].pImmutableSamplers = nullptr;
+
+  bindings[1].binding            = 1;
+  bindings[1].descriptorType     = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  bindings[1].descriptorCount    = 1;
+  bindings[1].stageFlags         = VK_SHADER_STAGE_FRAGMENT_BIT;
+  bindings[1].pImmutableSamplers = nullptr;
 
   VkDescriptorSetLayoutCreateInfo layoutInfo = {};
   layoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-  layoutInfo.bindingCount = 1;
+  layoutInfo.bindingCount = 2;
   layoutInfo.pBindings    = bindings;
 
   VK_ASSERT(core.dispatch.createDescriptorSetLayout(
       &layoutInfo, nullptr, &renderData.gpuSceneDataLayout));
 
+  DescriptorWriter writer;
+  writer.init(core.dispatch);
+
   for (u32 i = 0; i < FRAMES_IN_FLIGHT; i++) {
-    renderData.frames[i].descriptors.init(core.dispatch, 10, frameSizes);
+    renderData.frames[i].descriptors.init(core.dispatch,1000, frameSizes);
     renderData.frames[i].descriptorSet =
         renderData.frames[i].descriptors.allocate(renderData.gpuSceneDataLayout,
                                                   nullptr);
 
-    DescriptorWriter writer;
-    writer.init(core.dispatch);
     writer.writeBuffer(0, renderData.frames[i].gpuBuffer.buffer,
                        sizeof(GPUSceneData), 0,
                        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+
+    writer.writeImage(1, textureData.errorImage.imageView,
+                      textureData.samplerLinear,
+                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                      VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 
     writer.updateSet(renderData.frames[i].descriptorSet);
   }
@@ -791,20 +805,15 @@ void Engine::drawGeometry(VkCommandBuffer cmd) {
   mapped->view       = camera.getViewMatrix();
   mapped->projection = camera.getProjectionMatrix();
 
-  getCurrentFrame().descriptorSet = getCurrentFrame().descriptors.allocate(
-      renderData.gpuSceneDataLayout, nullptr);
-
-  DescriptorWriter writer;
-  writer.init(core.dispatch);
-  writer.writeBuffer(0, getCurrentFrame().gpuBuffer.buffer,
-                     sizeof(GPUSceneData), 0,
-                     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-
-  writer.updateSet(getCurrentFrame().descriptorSet);
-
-  core.dispatch.cmdBindDescriptorSets(
-      cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, renderData.pipelineLayout, 0, 1,
-      &getCurrentFrame().descriptorSet, 0, nullptr);
+  // {
+  //   DescriptorWriter writer;
+  //   writer.init(core.dispatch);
+  //   writer.writeBuffer(0, getCurrentFrame().gpuBuffer.buffer,
+  //                      sizeof(GPUSceneData), 0,
+  //                      VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+  //
+  //   writer.updateSet(getCurrentFrame().descriptorSet);
+  // }
 
   VkViewport viewport = {};
 
@@ -824,6 +833,10 @@ void Engine::drawGeometry(VkCommandBuffer cmd) {
   core.dispatch.cmdSetScissor(cmd, 0, 1, &scissor);
 
   for (size_t i = 0; i < entities.size(); i++) {
+
+    core.dispatch.cmdBindDescriptorSets(
+        cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, renderData.pipelineLayout, 0, 1,
+        &getCurrentFrame().descriptorSet, 0, nullptr);
 
     VertPushData mesh        = {};
     mesh.model               = entities[i].model;
@@ -875,6 +888,130 @@ AllocatedBuffer Engine::createBuffer(size_t allocSize, VkBufferUsageFlags usage,
   return newBuffer;
 }
 
+AllocatedImage Engine::createImage(VkExtent3D extent, VkFormat format,
+                                   VkImageUsageFlags usage, bool mipmapped) {
+  AllocatedImage newImage;
+  newImage.format = format;
+  newImage.extent = extent;
+
+  VkImageCreateInfo imageInfo =
+      leafInit::imageCreateInfo(format, usage, extent);
+  if (mipmapped) {
+    imageInfo.mipLevels =
+        (u32)std::floor(std::log2(std::max(extent.width, extent.height))) + 1;
+  }
+
+  VmaAllocationCreateInfo allocInfo = {};
+  allocInfo.usage                   = VMA_MEMORY_USAGE_GPU_ONLY;
+  allocInfo.requiredFlags =
+      VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+  VK_ASSERT(vmaCreateImage(core.allocator, &imageInfo, &allocInfo,
+                           &newImage.image, &newImage.allocation, nullptr));
+
+  VkImageAspectFlags aspectFlag = VK_IMAGE_ASPECT_COLOR_BIT;
+  if (format == VK_FORMAT_D32_SFLOAT) {
+    aspectFlag = VK_IMAGE_ASPECT_DEPTH_BIT;
+  }
+
+  VkImageViewCreateInfo viewInfo =
+      leafInit::imageViewCreateInfo(format, newImage.image, aspectFlag);
+  viewInfo.subresourceRange.levelCount = imageInfo.mipLevels;
+
+  VK_ASSERT(
+      core.dispatch.createImageView(&viewInfo, nullptr, &newImage.imageView));
+
+  vulkanDestroyer.addImage(newImage);
+
+  return newImage;
+}
+
+AllocatedImage Engine::createImage(void* data, VkExtent3D extent,
+                                   VkFormat format, VkImageUsageFlags usage,
+                                   bool mipmapped) {
+
+  VK_ASSERT(core.dispatch.resetFences(1, &immediateData.fence));
+  VK_ASSERT(core.dispatch.resetCommandBuffer(immediateData.commandBuffer, 0));
+
+  VkCommandPoolCreateInfo poolInfo = {};
+  poolInfo.sType                   = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+  poolInfo.flags                   = 0;
+  poolInfo.queueFamilyIndex        = core.graphicsQueueFamily;
+  poolInfo.pNext                   = nullptr;
+
+  core.dispatch.createCommandPool(&poolInfo, nullptr,
+                                  &immediateData.commandPool);
+
+  VkCommandBuffer cmd = immediateData.commandBuffer;
+
+  VkCommandBufferAllocateInfo allocInfo = {};
+  allocInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+  allocInfo.commandBufferCount = 1;
+  allocInfo.commandPool        = immediateData.commandPool;
+
+  core.dispatch.allocateCommandBuffers(&allocInfo, &cmd);
+
+  u32 dataSize = extent.depth * extent.width * extent.height * 4;
+
+  AllocatedBuffer uploadBuffer = createBuffer(
+      dataSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+  memcpy(uploadBuffer.allocationInfo.pMappedData, data, dataSize);
+
+  AllocatedImage newImage = createImage(
+      extent, format,
+      usage | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+      mipmapped);
+
+  VkCommandBufferBeginInfo beginInfo = leafInit::commandBufferBeginInfo(
+      VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+
+  core.dispatch.beginCommandBuffer(cmd, &beginInfo);
+
+  leafUtil::transitionImage(cmd, newImage.image, VK_IMAGE_LAYOUT_UNDEFINED,
+                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+  VkBufferImageCopy copyRegion = {};
+  copyRegion.bufferOffset      = 0;
+  copyRegion.bufferRowLength   = 0;
+  copyRegion.bufferImageHeight = 0;
+
+  copyRegion.imageSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+  copyRegion.imageSubresource.mipLevel       = 0;
+  copyRegion.imageSubresource.baseArrayLayer = 0;
+  copyRegion.imageSubresource.layerCount     = 1;
+  copyRegion.imageExtent                     = extent;
+
+  // copy the buffer into the image
+  vkCmdCopyBufferToImage(cmd, uploadBuffer.buffer, newImage.image,
+                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+
+  leafUtil::transitionImage(cmd, newImage.image,
+                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+  core.dispatch.endCommandBuffer(cmd);
+
+  VkCommandBufferSubmitInfo cmdSubmitInfo = {};
+  cmdSubmitInfo.sType         = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+  cmdSubmitInfo.commandBuffer = cmd;
+  cmdSubmitInfo.deviceMask    = 0;
+
+  VkSubmitInfo2 submit          = {};
+  submit.sType                  = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+  submit.commandBufferInfoCount = 1;
+  submit.pCommandBufferInfos    = &cmdSubmitInfo;
+
+  VK_ASSERT(core.dispatch.queueSubmit2(core.graphicsQueue, 1, &submit,
+                                       immediateData.fence));
+  VK_ASSERT(
+      core.dispatch.waitForFences(1, &immediateData.fence, true, U64_MAX));
+
+  // destroyBuffer(uploadBuffer);
+
+  vulkanDestroyer.addImage(newImage);
+  return newImage;
+}
 GPUMeshBuffers Engine::uploadMesh(std::span<u32>    indices,
                                   std::span<Vertex> vertices) {
   const size_t   vertexBufferSize = vertices.size() * sizeof(Vertex);
@@ -1037,6 +1174,54 @@ void Engine::initSceneData() {
         createBuffer(sizeof(GPUSceneData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                      VMA_MEMORY_USAGE_CPU_TO_GPU);
   }
+
+  // TODO: Move this
+  // 3 default textures, white, grey, black. 1 pixel each
+  uint32_t white = glm::packUnorm4x8(glm::vec4(1, 1, 1, 1));
+  textureData.whiteImage =
+      createImage((void*)&white, VkExtent3D{1, 1, 1}, VK_FORMAT_R8G8B8A8_UNORM,
+                  VK_IMAGE_USAGE_SAMPLED_BIT);
+
+  uint32_t grey = glm::packUnorm4x8(glm::vec4(0.66f, 0.66f, 0.66f, 1));
+  textureData.greyImage =
+      createImage((void*)&grey, VkExtent3D{1, 1, 1}, VK_FORMAT_R8G8B8A8_UNORM,
+                  VK_IMAGE_USAGE_SAMPLED_BIT);
+
+  uint32_t black = glm::packUnorm4x8(glm::vec4(0, 0, 0, 0));
+  textureData.blackImage =
+      createImage((void*)&black, VkExtent3D{1, 1, 1}, VK_FORMAT_R8G8B8A8_UNORM,
+
+                  VK_IMAGE_USAGE_SAMPLED_BIT);
+
+  // checkerboard image
+  uint32_t magenta = glm::packUnorm4x8(glm::vec4(1, 0, 1, 1));
+  std::array<uint32_t, 16 * 16> pixels; // for 16x16 checkerboard texture
+  for (int x = 0; x < 16; x++) {
+    for (int y = 0; y < 16; y++) {
+      pixels[y * 16 + x] = ((x % 2) ^ (y % 2)) ? magenta : black;
+    }
+  }
+  textureData.errorImage =
+      createImage(pixels.data(), VkExtent3D{16, 16, 1},
+                  VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT);
+
+  VkSamplerCreateInfo sampl = {.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+
+  sampl.magFilter = VK_FILTER_NEAREST;
+  sampl.minFilter = VK_FILTER_NEAREST;
+
+  core.dispatch.createSampler(&sampl, nullptr, &textureData.samplerNearest);
+
+  sampl.magFilter = VK_FILTER_LINEAR;
+  sampl.minFilter = VK_FILTER_LINEAR;
+  core.dispatch.createSampler(&sampl, nullptr, &textureData.samplerLinear);
+
+  vulkanDestroyer.addImage(textureData.blackImage);
+  vulkanDestroyer.addImage(textureData.greyImage);
+  vulkanDestroyer.addImage(textureData.whiteImage);
+  vulkanDestroyer.addImage(textureData.errorImage);
+  // vulkanDestroyer.addSampler(textureData.samplerLinear);
+  // vulkanDestroyer.addSampler(textureData.samplerNearest);
 }
 
 void Engine::resizeSwapchain(u32 width, u32 height) {

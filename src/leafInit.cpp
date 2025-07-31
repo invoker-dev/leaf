@@ -66,4 +66,12 @@ pipelineLayoutCreateInfo(VkDescriptorSetLayout& layout, u32 count) {
 
   // TODO: finish
 }
+
+VkCommandBufferBeginInfo commandBufferBeginInfo(VkCommandBufferUsageFlags usage) {
+  VkCommandBufferBeginInfo info = {};
+  info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  info.flags = usage;
+  return info;
+
+}
 } // namespace leafInit

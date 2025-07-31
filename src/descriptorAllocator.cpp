@@ -49,8 +49,6 @@ void DescriptorAllocator::init(vkb::DispatchTable const& dispatch,
   setsPerPool              = initialSets *= 1.5;
 
   readyPools.push_back(newPool);
-
-  fmt::println("init: {}", readyPools.size());
 }
 
 void DescriptorAllocator::clearPools() {
@@ -87,8 +85,8 @@ VkDescriptorPool DescriptorAllocator::getPool() {
       setsPerPool = maxSetCount;
     }
   }
-  fmt::println("Pool status: \n ready: {} \n full: {} \n", readyPools.size(),
-               fullPools.size());
+  // fmt::println("Pool status: \n ready: {} \n full: {} \n", readyPools.size(),
+  //              fullPools.size());
   return newPool;
 }
 

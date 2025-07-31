@@ -13,6 +13,8 @@ VkImageViewCreateInfo        imageViewCreateInfo(VkFormat format, VkImage image,
 VkDescriptorSetLayoutBinding descriptorSetLayoutBinding(VkDescriptorType type,
                                                         VkShaderStageFlags shaderStage);
 
+VkCommandBufferBeginInfo commandBufferBeginInfo(VkCommandBufferUsageFlags usage = 0);
+
 VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo(VkDescriptorSetLayout& layout, u32 count);
 
 } // namespace leafInit
