@@ -702,7 +702,7 @@ void Engine::initDescriptors() {
                        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
     writer.writeImage(1, textureData.errorImage.imageView,
-                      textureData.samplerLinear,
+                      textureData.samplerNearest,
                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                       VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
 
