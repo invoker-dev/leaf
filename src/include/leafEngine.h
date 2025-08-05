@@ -1,9 +1,12 @@
 #pragma once
+#include "fastgltf/types.hpp"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_events.h>
 #include <VkBootstrap.h>
+#include <body.h>
 #include <fmt/core.h>
 #include <glm/ext/vector_float4.hpp>
+#include <unordered_map>
 #include <vector>
 #include <vk_mem_alloc.h>
 
@@ -68,18 +71,25 @@ struct VulkanRenderData {
 };
 
 struct TextureData {
-  AllocatedImage whiteImage;
-  AllocatedImage blackImage;
-  AllocatedImage greyImage;
-  AllocatedImage errorImage;
+  AllocatedImage                       errorImage;
+  std::vector<AllocatedImage>          images;
+  std::unordered_map<std::string, u32> imageMap;
 
   VkSampler samplerLinear;
   VkSampler samplerNearest;
 
   VkDescriptorSetLayout textureDescriptorLayout;
-  VkDescriptorSet       textureSet;
+  //   VkDescriptorSet       textureSet;
+  // DescriptorAllocator descriptors;
+};
 
-  DescriptorAllocator descriptors;
+struct SimulationData {
+
+  std::vector<Body> bodies;
+  f32               globalScale   = 1;
+  f32               planetScale   = 1;
+  f32               distanceScale = 1e-8;
+  f32               timeScale     = 1;
 };
 
 class Engine {
@@ -104,7 +114,7 @@ public:
 
   Camera camera;
 
-  std::vector<Entity> entities;
+  SimulationData simulationData;
 
   void createSDLWindow();
   void initVulkan();
@@ -115,7 +125,7 @@ public:
   void initDescriptors();
   void initImGUI();
   void initPipeline();
-  void initEntities();
+  void initSolarSystem();
   void initSceneData();
 
   void prepareFrame();

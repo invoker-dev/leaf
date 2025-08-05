@@ -88,6 +88,11 @@ target_include_directories(imgui PUBLIC
 
 target_compile_options(imgui PRIVATE -w)
 
+add_library(stb INTERFACE)
+target_include_directories(stb INTERFACE
+    lib/stb
+)
+
 # ------------------------------------------------------
 # Main executable
 # ------------------------------------------------------
@@ -113,6 +118,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     fastgltf
     imgui
     volk
+    stb
 )
 
 

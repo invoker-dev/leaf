@@ -1,5 +1,9 @@
+#include <complex>
 #include <descriptorWriter.h>
+#include <fmt/base.h>
 #include <fmt/format.h>
+#include <span>
+#include <vector>
 #include <vulkan/vulkan_core.h>
 
 void DescriptorWriter::writeBuffer(u32 binding, VkBuffer buffer, u32 size,

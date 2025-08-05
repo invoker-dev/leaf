@@ -6,12 +6,13 @@
 
 layout (location = 0) in vec4 inColor;
 layout (location = 1) in vec2 inUV;
+layout (location = 2) flat in int textureIndex;
 
 layout(location = 0) out vec4 outFragColor;
 
-layout(set = 0, binding = 1) uniform sampler2D displayTexture;
+layout(set = 0, binding = 1) uniform sampler2D textures[16];
 
 void main() {
 
-    outFragColor = texture(displayTexture, inUV);
+    outFragColor = texture(textures[textureIndex], inUV);
 }

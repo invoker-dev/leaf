@@ -34,7 +34,7 @@ struct FrameData {
   DescriptorAllocator descriptors;
   VkDescriptorSet     descriptorSet;
 
-  AllocatedBuffer     gpuBuffer;
+  AllocatedBuffer gpuBuffer;
 };
 
 struct ImmediateData {
@@ -70,6 +70,7 @@ struct alignas(16) VertPushData {
   glm::vec4       color;
   f32             blendFactor;
   VkDeviceAddress vertexBufferAddress;
+  int             textureIndex;
 };
 
 struct alignas(16) GPUSceneData {

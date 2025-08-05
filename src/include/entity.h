@@ -1,12 +1,8 @@
-
+#pragma once
 #include "leafStructs.h"
-
 #include <constants.h>
-constexpr u32 ENTITY_TYPE_NONE   = 0;
-constexpr u32 ENTITY_TYPE_PLANET = 1 << 0;
-constexpr u32 ENTITY_TYPE_TEAPOT = 1 << 1;
 
-struct Entity {
+struct EntityData {
   MeshAsset mesh;
   glm::vec3 position;
   glm::vec3 rotation;
@@ -14,5 +10,6 @@ struct Entity {
   glm::vec4 color;
   f32       tint;
   glm::mat4 model;
-  u32       type;
+  AllocatedImage texture;
+  
 };

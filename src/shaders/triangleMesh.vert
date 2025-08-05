@@ -3,6 +3,7 @@
 
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec2 outUV;
+layout(location = 2) flat out int textureIndex;
 
 struct Vertex {
     vec3 position;
@@ -27,6 +28,7 @@ layout(push_constant) uniform constants
     vec4 color;
     float blendFactor;
     VertexBuffer vertexBuffer;
+    int textureIndex;
 } pushConstants;
 
 void main()
@@ -40,4 +42,6 @@ void main()
     outColor = mix(v.color, pushConstants.color, pushConstants.blendFactor);
     outUV.x = v.uv_x;
     outUV.y = v.uv_y;
+
+    textureIndex = pushConstants.textureIndex;
 }

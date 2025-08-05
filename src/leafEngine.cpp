@@ -7,6 +7,7 @@
 // TODO: Normal maps
 // TODO: Various Post processing
 // CONTINOUS TODO: Real Architecture
+#include "entity.h"
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_gpu.h>
@@ -16,17 +17,20 @@
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
 #include <VkBootstrap.h>
+#include <body.h>
 #include <constants.h>
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <descriptorAllocator.h>
+#include <filesystem>
 #include <fmt/base.h>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/ext/vector_float3.hpp>
 #include <glm/ext/vector_float4.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/mat4x4.hpp>
 #include <glm/packing.hpp>
 #include <glm/trigonometric.hpp>
 #include <imgui.h>
@@ -39,13 +43,15 @@
 #include <leafStructs.h>
 #include <leafUtil.h>
 #include <pipelineBuilder.h>
+#include <sstream>
 #include <string>
 #include <unistd.h>
 #include <vector>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_wayland.h>
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 #define VMA_IMPLEMENTATION
-#include <glm/mat4x4.hpp>
 #include <vk_mem_alloc.h>
 
 namespace LeafEngine {
@@ -70,7 +76,7 @@ Engine::Engine() {
   initDescriptors();
   initImGUI();
   initPipeline();
-  initEntities();
+  initSolarSystem();
 };
 Engine::~Engine() {
 
@@ -130,8 +136,8 @@ void Engine::initVulkan() {
       .require_api_version(1, 3, 0)
       .use_default_debug_messenger()
       .request_validation_layers(USE_VALIDATION_LAYERS)
-      // .set_debug_messenger_severity(DEBUG_SEVERITY)
-      // .set_debug_messenger_type(DEBUG_TYPE)
+      .set_debug_messenger_severity(DEBUG_SEVERITY)
+      .set_debug_messenger_type(DEBUG_TYPE)
       .enable_extensions(sdlExtensions);
 
   auto returnedInstance = builder.build();
@@ -530,12 +536,28 @@ void Engine::drawImGUI(VkCommandBuffer cmd, VkImageView targetImage) {
   ImGui::Text("slide:");
   ImGui::ColorEdit3("BGCOLOR", glm::value_ptr(renderData.backgroundColor));
 
-  if (ImGui::CollapsingHeader("Entities")) {
-    for (int i = 0; i < entities.size(); i++) {
-      std::string label  = "e" + std::to_string(i);
-      std::string tlabel = "tint" + std::to_string(i);
-      ImGui::ColorEdit4(label.c_str(), glm::value_ptr(entities[i].color));
-      ImGui::SliderFloat(tlabel.c_str(), &entities[i].tint, 0.f, 1.f);
+  if (ImGui::CollapsingHeader("simulationData.planets")) {
+
+    ImGui::DragFloat("planet scale", &simulationData.planetScale);
+    ImGui::DragFloat("distance scale", &simulationData.distanceScale);
+    ImGui::DragFloat("global scale", &simulationData.globalScale);
+    ImGui::DragFloat("time scale", &simulationData.timeScale);
+
+    for (int i = 0; i < simulationData.bodies.size(); i++) {
+      std::string id = std::to_string(i);
+
+      EntityData* entity = &simulationData.bodies[i].entityData;
+
+      ImGui::InputFloat3(("position##" + id).c_str(), &entity->position.x);
+      ImGui::InputFloat3(("scale##" + id).c_str(), &entity->scale.x);
+
+      if (ImGui::CollapsingHeader(std::to_string(i).c_str())) {
+        ImGui::ColorEdit4(
+            ("color##" + id).c_str(),
+            glm::value_ptr(simulationData.bodies[i].entityData.color));
+        ImGui::SliderFloat(("tint##" + id).c_str(),
+                           &simulationData.bodies[i].entityData.tint, 0.f, 1.f);
+      }
     }
   }
   ImGui::SliderFloat("Render Scale", &renderData.renderScale, 0.1, 1.f);
@@ -662,8 +684,8 @@ void Engine::submitFrame() {
 
 void Engine::initDescriptors() {
   std::vector<DescriptorAllocator::PoolSizeRatio> frameSizes = {
-      {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3},
-      {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3},
+      {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
+      {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 64},
   };
 
   VkDescriptorSetLayoutBinding bindings[2] = {};
@@ -676,7 +698,7 @@ void Engine::initDescriptors() {
 
   bindings[1].binding            = 1;
   bindings[1].descriptorType     = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  bindings[1].descriptorCount    = 1;
+  bindings[1].descriptorCount    = textureData.images.size();
   bindings[1].stageFlags         = VK_SHADER_STAGE_FRAGMENT_BIT;
   bindings[1].pImmutableSamplers = nullptr;
 
@@ -692,7 +714,7 @@ void Engine::initDescriptors() {
   writer.init(core.dispatch);
 
   for (u32 i = 0; i < FRAMES_IN_FLIGHT; i++) {
-    renderData.frames[i].descriptors.init(core.dispatch,1000, frameSizes);
+    renderData.frames[i].descriptors.init(core.dispatch, 1000, frameSizes);
     renderData.frames[i].descriptorSet =
         renderData.frames[i].descriptors.allocate(renderData.gpuSceneDataLayout,
                                                   nullptr);
@@ -701,12 +723,27 @@ void Engine::initDescriptors() {
                        sizeof(GPUSceneData), 0,
                        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
-    writer.writeImage(1, textureData.errorImage.imageView,
-                      textureData.samplerNearest,
-                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                      VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-
     writer.updateSet(renderData.frames[i].descriptorSet);
+
+    std::vector<VkDescriptorImageInfo> imageInfos;
+    for (size_t j = 0; j < textureData.images.size(); ++j) {
+      imageInfos.push_back({
+          .sampler     = textureData.samplerNearest,
+          .imageView   = textureData.images[j].imageView,
+          .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+      });
+    }
+
+    VkWriteDescriptorSet write{};
+    write.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet          = renderData.frames[i].descriptorSet;
+    write.dstBinding      = 1;
+    write.dstArrayElement = 0;
+    write.descriptorCount = (u32)imageInfos.size();
+    write.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.pImageInfo      = imageInfos.data();
+
+    core.dispatch.updateDescriptorSets(1, &write, 0, nullptr);
   }
 }
 
@@ -805,16 +842,6 @@ void Engine::drawGeometry(VkCommandBuffer cmd) {
   mapped->view       = camera.getViewMatrix();
   mapped->projection = camera.getProjectionMatrix();
 
-  // {
-  //   DescriptorWriter writer;
-  //   writer.init(core.dispatch);
-  //   writer.writeBuffer(0, getCurrentFrame().gpuBuffer.buffer,
-  //                      sizeof(GPUSceneData), 0,
-  //                      VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-  //
-  //   writer.updateSet(getCurrentFrame().descriptorSet);
-  // }
-
   VkViewport viewport = {};
 
   viewport.x        = 0;
@@ -832,17 +859,20 @@ void Engine::drawGeometry(VkCommandBuffer cmd) {
   scissor.extent.height = renderData.drawExtent.height;
   core.dispatch.cmdSetScissor(cmd, 0, 1, &scissor);
 
-  for (size_t i = 0; i < entities.size(); i++) {
+  for (size_t i = 0; i < simulationData.bodies.size(); i++) {
 
     core.dispatch.cmdBindDescriptorSets(
         cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, renderData.pipelineLayout, 0, 1,
         &getCurrentFrame().descriptorSet, 0, nullptr);
 
+    EntityData* entity = &simulationData.bodies[i].entityData;
+
     VertPushData mesh        = {};
-    mesh.model               = entities[i].model;
-    mesh.color               = entities[i].color;
-    mesh.blendFactor         = entities[i].tint;
-    mesh.vertexBufferAddress = entities[i].mesh.meshBuffers.vertexBufferAddress;
+    mesh.model               = entity->model;
+    mesh.color               = entity->color;
+    mesh.blendFactor         = entity->tint;
+    mesh.vertexBufferAddress = entity->mesh.meshBuffers.vertexBufferAddress;
+    mesh.textureIndex        = simulationData.bodies[i].textureIndex;
 
     VkPushConstantsInfo vertPushInfo = {};
     vertPushInfo.sType               = VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO;
@@ -856,11 +886,11 @@ void Engine::drawGeometry(VkCommandBuffer cmd) {
                                    vertPushInfo.stageFlags, vertPushInfo.offset,
                                    vertPushInfo.size, vertPushInfo.pValues);
 
-    core.dispatch.cmdBindIndexBuffer(cmd, entities[i].mesh.getIndexBuffer(), 0,
+    core.dispatch.cmdBindIndexBuffer(cmd, entity->mesh.getIndexBuffer(), 0,
                                      VK_INDEX_TYPE_UINT32);
 
-    core.dispatch.cmdDrawIndexed(cmd, entities[i].mesh.surfaces[0].count, 1,
-                                 entities[i].mesh.surfaces[0].startIndex, 0, 0);
+    core.dispatch.cmdDrawIndexed(cmd, entity->mesh.surfaces[0].count, 1,
+                                 entity->mesh.surfaces[0].startIndex, 0, 0);
   }
 
   core.dispatch.cmdEndRendering(cmd);
@@ -1103,37 +1133,144 @@ GPUMeshBuffers Engine::uploadMesh(std::span<u32>    indices,
   return newSurface;
 }
 
-void Engine::initEntities() {
+void Engine::initSolarSystem() {
+
+  f64 AU = 1.496e11 * simulationData.distanceScale;
+
+  Body sun         = {};
+  sun.textureIndex = textureData.imageMap["sun"];
+  sun.baseScale    = 109; // radius relative to earth
+  sun.isPlanet     = false;
+  simulationData.bodies.push_back(sun);
+
+  Body mercury         = {};
+  mercury.textureIndex = textureData.imageMap["mercury"];
+  mercury.isPlanet     = true;
+  mercury.baseScale    = 0.3829;
+  mercury.a            = 0.387098 * AU;
+  mercury.e            = 0.205630;
+  mercury.T            = 87.9691;
+  mercury.M0           = 174.796;
+  mercury.t            = 0;
+  mercury.o            = 29.124;
+  mercury.Omega        = 48.331;
+  mercury.i            = 3.38;
+  simulationData.bodies.push_back(mercury);
+
+  Body venus         = {};
+  venus.textureIndex = textureData.imageMap["venus"];
+  venus.isPlanet     = true;
+  venus.baseScale    = 0.9499;          // radius in earths
+  venus.a            = 0.723332 * AU;   // semi-major axis
+  venus.e            = 0.0167086;       // eccentricity
+  venus.T            = 365.256363004; // days
+  venus.M0           = 6.38122045;    // radians
+  venus.t            = 0;               // orbital position (days)
+  venus.o            = 54.884;          // argument of perihelion
+  venus.Omega        = 76.680;          // longitute of ascending node
+  venus.i            = 3.86;            // inclination to sun's equator
+
+  simulationData.bodies.push_back(venus);
+
+  Body earth         = {};
+  earth.textureIndex = textureData.imageMap["earth"];
+  earth.isPlanet     = true;
+  earth.baseScale    = 1;
+  earth.a            = 1 * AU;
+  earth.e            = 0.0167086;
+  earth.T            = 365.256363004;
+  earth.M0           = 358.617;
+  earth.t            = 0;
+  earth.o            = 114.20783;
+  earth.Omega        = -11.26064;
+  earth.i            = 7.155;
+  simulationData.bodies.push_back(earth);
+
+  Body mars         = {};
+  mars.textureIndex = textureData.imageMap["mars"];
+  mars.isPlanet     = true;
+  mars.baseScale    = 0.533;
+  mars.a            = 1.523680 * AU;
+  mars.e            = 0.0934;
+  mars.T            = 686.980;
+  mars.M0           = 19.412;
+  mars.t            = 0;
+  mars.o            = 286.5;
+  mars.Omega        = 49.57854;
+  mars.i            = 3.86;
+  simulationData.bodies.push_back(mars);
+
+  Body saturn         = {};
+  saturn.textureIndex = textureData.imageMap["saturn"];
+  saturn.isPlanet     = true;
+  saturn.baseScale    = 9.449;
+  saturn.a            = 9.5826 * AU;
+  saturn.e            = 0.0565;
+  saturn.T            = 10'755.70;
+  saturn.M0           = 317.020;
+  saturn.t            = 0;
+  saturn.o            = 339.392;
+  saturn.Omega        = 113.665;
+  saturn.i            = 5.51;
+  simulationData.bodies.push_back(saturn);
+
+  Body jupiter         = {};
+  jupiter.textureIndex = textureData.imageMap["jupiter"];
+  jupiter.isPlanet     = true;
+  jupiter.baseScale    = 11.209;
+  jupiter.a            = 5.2038 * AU;
+  jupiter.e            = 0.0489;
+  jupiter.T            = 4'332.59;
+  jupiter.M0           = 20.020;
+  jupiter.t            = 0;
+  jupiter.o            = 273.867;
+  jupiter.Omega        = 100.464;
+  jupiter.i            = 6.09;
+  simulationData.bodies.push_back(jupiter);
+
+
+  Body uranus         = {};
+  uranus.textureIndex = textureData.imageMap["uranus"];
+  uranus.isPlanet     = true;
+  uranus.baseScale    = 4.007;
+  uranus.a            = 19.19126  * AU;
+  uranus.e            = 0.04717;
+  uranus.T            = 30'688.5;
+  uranus.M0           = 142.238600;
+  uranus.t            = 0;
+  uranus.o            = 96.998857;
+  uranus.Omega        = 74.006;
+  uranus.i            = 6.48;
+  simulationData.bodies.push_back(uranus);
+
+  Body neptune         = {};
+  neptune.textureIndex = textureData.imageMap["neptune"];
+  neptune.isPlanet     = true;
+  neptune.baseScale    = 3.883;
+  neptune.a            = 30.07 * AU;
+  neptune.e            = 0.008678;
+  neptune.T            = 60'195;
+  neptune.M0           = 142.238600;
+  neptune.t            = 0;
+  neptune.o            = 273.187;
+  neptune.Omega        = 131.783;
+  neptune.i            = 6.43;
+  simulationData.bodies.push_back(neptune);
 
   MeshAsset planetAsset = leafGltf::loadGltfMesh("assets/planet.gltf");
-  // MeshAsset teapotAsset = leafGltf::loadGltfMesh("assets/teapot.gltf");
 
   GPUMeshBuffers planetMesh =
       uploadMesh(planetAsset.indices, planetAsset.vertices);
-  // GPUMeshBuffers teapotMesh =
-  //     uploadMesh(teapotAsset.indices, teapotAsset.vertices);
 
-  for (u32 i = 0; i < 1; i++) {
-    Entity entity;
-    entity.position         = glm::vec3(i * 3);
-    entity.rotation         = glm::vec3(0);
-    entity.scale            = glm::vec3(1);
-    entity.color            = glm::vec4();
-    entity.tint             = 0;
-    entity.mesh             = planetAsset;
-    entity.mesh.meshBuffers = planetMesh;
-
-    glm::mat4 model = glm::mat4(1.f);
-
-    model = glm::scale(model, entity.scale);
-    model = glm::rotate(model, entity.rotation.x, glm::vec3(1, 0, 0));
-    model = glm::rotate(model, entity.rotation.y, glm::vec3(0, 1, 0));
-    model = glm::rotate(model, entity.rotation.z, glm::vec3(0, 0, 1));
-    model = glm::translate(model, entity.position);
-
-    entity.model = model;
-    entities.push_back(entity);
+  for (u32 i = 0; i < simulationData.bodies.size(); i++) {
+    EntityData* entity       = &simulationData.bodies[i].entityData;
+    entity->mesh             = planetAsset;
+    entity->mesh.meshBuffers = planetMesh;
+    entity->position         = simulationData.bodies[i].getPosition();
+    entity->scale            = glm::vec3(1);
   }
+  // ugly, i know
+  sun.entityData.position = glm::vec3(0);
 }
 
 void Engine::processEvent(SDL_Event& e) {
@@ -1153,6 +1290,27 @@ void Engine::processEvent(SDL_Event& e) {
 }
 
 void Engine::update(f64 dt) {
+
+  for (u32 i = 0; i < simulationData.bodies.size(); i++) {
+
+    Body* body = &simulationData.bodies[i];
+
+    f32 scale = body->baseScale * simulationData.globalScale;
+    if (body->isPlanet) {
+      scale *= simulationData.planetScale;
+    }
+    body->update(simulationData.timeScale * dt);
+    body->entityData.position = body->getPosition();
+
+    glm::mat4 model = glm::mat4(1.f);
+    model           = glm::translate(model, body->entityData.position);
+    model = glm::rotate(model, body->entityData.rotation.x, glm::vec3(1, 0, 0));
+    model = glm::rotate(model, body->entityData.rotation.y, glm::vec3(0, 1, 0));
+    model = glm::rotate(model, body->entityData.rotation.z, glm::vec3(0, 0, 1));
+    model = glm::scale(model, glm::vec3(scale) * body->entityData.scale);
+
+    body->entityData.model = model;
+  }
 
   int width, height;
   SDL_GetWindowSizeInPixels(surface.window, &width, &height);
@@ -1175,25 +1333,8 @@ void Engine::initSceneData() {
                      VMA_MEMORY_USAGE_CPU_TO_GPU);
   }
 
-  // TODO: Move this
-  // 3 default textures, white, grey, black. 1 pixel each
-  uint32_t white = glm::packUnorm4x8(glm::vec4(1, 1, 1, 1));
-  textureData.whiteImage =
-      createImage((void*)&white, VkExtent3D{1, 1, 1}, VK_FORMAT_R8G8B8A8_UNORM,
-                  VK_IMAGE_USAGE_SAMPLED_BIT);
-
-  uint32_t grey = glm::packUnorm4x8(glm::vec4(0.66f, 0.66f, 0.66f, 1));
-  textureData.greyImage =
-      createImage((void*)&grey, VkExtent3D{1, 1, 1}, VK_FORMAT_R8G8B8A8_UNORM,
-                  VK_IMAGE_USAGE_SAMPLED_BIT);
-
-  uint32_t black = glm::packUnorm4x8(glm::vec4(0, 0, 0, 0));
-  textureData.blackImage =
-      createImage((void*)&black, VkExtent3D{1, 1, 1}, VK_FORMAT_R8G8B8A8_UNORM,
-
-                  VK_IMAGE_USAGE_SAMPLED_BIT);
-
   // checkerboard image
+  uint32_t black   = glm::packUnorm4x8(glm::vec4(0, 0, 0, 0));
   uint32_t magenta = glm::packUnorm4x8(glm::vec4(1, 0, 1, 1));
   std::array<uint32_t, 16 * 16> pixels; // for 16x16 checkerboard texture
   for (int x = 0; x < 16; x++) {
@@ -1201,6 +1342,30 @@ void Engine::initSceneData() {
       pixels[y * 16 + x] = ((x % 2) ^ (y % 2)) ? magenta : black;
     }
   }
+
+  std::filesystem::path path = "assets/img/";
+
+  u32 index = 0;
+  for (const auto& entry : std::filesystem::directory_iterator(path)) {
+
+    int width, height, channels;
+    if (entry.is_regular_file()) {
+
+      unsigned char* data =
+          stbi_load(entry.path().c_str(), &width, &height, &channels, 4);
+      AllocatedImage image =
+          createImage(data, VkExtent3D{(u32)width, (u32)height, 1},
+                      VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT);
+
+      textureData.images.push_back(image);
+      textureData.imageMap.insert({entry.path().stem().c_str(), index});
+      ++index;
+
+      fmt::println("loaded {}", entry.path().stem().c_str());
+      vulkanDestroyer.addImage(image);
+    }
+  }
+
   textureData.errorImage =
       createImage(pixels.data(), VkExtent3D{16, 16, 1},
                   VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_SAMPLED_BIT);
@@ -1216,9 +1381,6 @@ void Engine::initSceneData() {
   sampl.minFilter = VK_FILTER_LINEAR;
   core.dispatch.createSampler(&sampl, nullptr, &textureData.samplerLinear);
 
-  vulkanDestroyer.addImage(textureData.blackImage);
-  vulkanDestroyer.addImage(textureData.greyImage);
-  vulkanDestroyer.addImage(textureData.whiteImage);
   vulkanDestroyer.addImage(textureData.errorImage);
   // vulkanDestroyer.addSampler(textureData.samplerLinear);
   // vulkanDestroyer.addSampler(textureData.samplerNearest);

@@ -13,7 +13,7 @@
 LeafEngine::Engine* engine;
 
 f64 dt          = 1 / 120.0;
-f64 time        = 0;
+f64 t           = 0;
 f64 currentTime = SDL_GetPerformanceCounter();
 // init
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[]) {
@@ -46,7 +46,7 @@ SDL_AppResult SDL_AppIterate(void* appstate) {
     float deltaTime = std::min(frameTime, dt);
     engine->update(deltaTime);
     frameTime -= deltaTime;
-    time += deltaTime;
+    t += deltaTime;
   }
 
   engine->draw();
