@@ -31,7 +31,7 @@ struct Body {
     return E;
   }
 
-  glm::vec3 getPosition() const {
+  glm::vec3 getPosition(f32 distanceScale) const {
     if (isPlanet) {
 
       f64 pi = glm::pi<f64>();
@@ -42,7 +42,7 @@ struct Body {
 
       f64 theta = 2 * atan2(sqrt(1 + e) * sin(E / 2), sqrt(1 - e) * cos(E / 2));
 
-      f64 r = a * (1 - e * cos(E));
+      f64 r = a * (1 - e * cos(E)) * distanceScale;
 
       f64 cosThetaOmega = cos(theta + glm::radians(o));
       f64 sinThetaOmega = sin(theta + glm::radians(o));

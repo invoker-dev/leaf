@@ -18,6 +18,7 @@
 #include <SDL3/SDL_vulkan.h>
 #include <VkBootstrap.h>
 #include <body.h>
+#include <cmath>
 #include <constants.h>
 #include <cstddef>
 #include <cstdio>
@@ -51,6 +52,7 @@
 #include <vulkan/vulkan_wayland.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+#include <stb_truetype.h>
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
 
@@ -72,7 +74,6 @@ Engine::Engine() {
 
   // TODO: This order is not fine
   initSceneData();
-
   initDescriptors();
   initImGUI();
   initPipeline();
@@ -539,19 +540,29 @@ void Engine::drawImGUI(VkCommandBuffer cmd, VkImageView targetImage) {
   if (ImGui::CollapsingHeader("simulationData.planets")) {
 
     ImGui::DragFloat("planet scale", &simulationData.planetScale);
-    ImGui::DragFloat("distance scale", &simulationData.distanceScale);
+    ImGui::Text("Camera target: %d", simulationData.bodies[targetIndex].textureIndex);
+
+    float logMin   = log10f(1e-9f);
+    float logMax   = log10f(1);
+    float logValue = log10f(simulationData.distanceScale);
+
+    ImGui::SliderFloat("distance scale", &logValue, -9, 1, "%.10f");
+    simulationData.distanceScale = powf(10.f, logValue);
+
     ImGui::DragFloat("global scale", &simulationData.globalScale);
-    ImGui::DragFloat("time scale", &simulationData.timeScale);
+    ImGui::SliderFloat("time scale", &simulationData.timeScale, 0.f, 1000.f);
+    ImGui::SliderFloat("Render Scale", &renderData.renderScale, 0.1f, 1.f);
 
     for (int i = 0; i < simulationData.bodies.size(); i++) {
-      std::string id = std::to_string(i);
-
-      EntityData* entity = &simulationData.bodies[i].entityData;
-
-      ImGui::InputFloat3(("position##" + id).c_str(), &entity->position.x);
-      ImGui::InputFloat3(("scale##" + id).c_str(), &entity->scale.x);
 
       if (ImGui::CollapsingHeader(std::to_string(i).c_str())) {
+        std::string id = std::to_string(i);
+
+        EntityData* entity = &simulationData.bodies[i].entityData;
+
+        ImGui::InputFloat3(("position##" + id).c_str(), &entity->position.x);
+        ImGui::InputFloat3(("scale##" + id).c_str(), &entity->scale.x);
+
         ImGui::ColorEdit4(
             ("color##" + id).c_str(),
             glm::value_ptr(simulationData.bodies[i].entityData.color));
@@ -560,7 +571,6 @@ void Engine::drawImGUI(VkCommandBuffer cmd, VkImageView targetImage) {
       }
     }
   }
-  ImGui::SliderFloat("Render Scale", &renderData.renderScale, 0.1, 1.f);
 
   ImGui::End();
   ImGui::Render();
@@ -1135,7 +1145,7 @@ GPUMeshBuffers Engine::uploadMesh(std::span<u32>    indices,
 
 void Engine::initSolarSystem() {
 
-  f64 AU = 1.496e11 * simulationData.distanceScale;
+  f64 AU = 1.496e11;
 
   Body sun         = {};
   sun.textureIndex = textureData.imageMap["sun"];
@@ -1160,15 +1170,15 @@ void Engine::initSolarSystem() {
   Body venus         = {};
   venus.textureIndex = textureData.imageMap["venus"];
   venus.isPlanet     = true;
-  venus.baseScale    = 0.9499;          // radius in earths
-  venus.a            = 0.723332 * AU;   // semi-major axis
-  venus.e            = 0.0167086;       // eccentricity
+  venus.baseScale    = 0.9499;        // radius in earths
+  venus.a            = 0.723332 * AU; // semi-major axis
+  venus.e            = 0.0167086;     // eccentricity
   venus.T            = 365.256363004; // days
   venus.M0           = 6.38122045;    // radians
-  venus.t            = 0;               // orbital position (days)
-  venus.o            = 54.884;          // argument of perihelion
-  venus.Omega        = 76.680;          // longitute of ascending node
-  venus.i            = 3.86;            // inclination to sun's equator
+  venus.t            = 0;             // orbital position (days)
+  venus.o            = 54.884;        // argument of perihelion
+  venus.Omega        = 76.680;        // longitute of ascending node
+  venus.i            = 3.86;          // inclination to sun's equator
 
   simulationData.bodies.push_back(venus);
 
@@ -1228,12 +1238,11 @@ void Engine::initSolarSystem() {
   jupiter.i            = 6.09;
   simulationData.bodies.push_back(jupiter);
 
-
   Body uranus         = {};
   uranus.textureIndex = textureData.imageMap["uranus"];
   uranus.isPlanet     = true;
   uranus.baseScale    = 4.007;
-  uranus.a            = 19.19126  * AU;
+  uranus.a            = 19.19126 * AU;
   uranus.e            = 0.04717;
   uranus.T            = 30'688.5;
   uranus.M0           = 142.238600;
@@ -1266,8 +1275,9 @@ void Engine::initSolarSystem() {
     EntityData* entity       = &simulationData.bodies[i].entityData;
     entity->mesh             = planetAsset;
     entity->mesh.meshBuffers = planetMesh;
-    entity->position         = simulationData.bodies[i].getPosition();
-    entity->scale            = glm::vec3(1);
+    entity->position =
+        simulationData.bodies[i].getPosition(simulationData.distanceScale);
+    entity->scale = glm::vec3(1);
   }
   // ugly, i know
   sun.entityData.position = glm::vec3(0);
@@ -1282,6 +1292,30 @@ void Engine::processEvent(SDL_Event& e) {
       surface.captureMouse = !surface.captureMouse;
       camera.active        = !camera.active;
       SDL_SetWindowRelativeMouseMode(surface.window, surface.captureMouse);
+    }
+    if (e.key.scancode == SDL_SCANCODE_Q) {
+      if(targetIndex <= 0) {
+        targetIndex = simulationData.bodies.size() - 1;
+      } else  {
+        targetIndex--;
+      }
+
+      camera.setTarget(simulationData.bodies[targetIndex]);
+    }
+
+    if (e.key.scancode == SDL_SCANCODE_E) {
+
+      if(targetIndex >= simulationData.bodies.size() - 1) {
+        targetIndex = 0;
+      } else {
+        targetIndex++;
+      }
+      camera.setTarget(simulationData.bodies[targetIndex]);
+    }
+    if (e.key.scancode == SDL_SCANCODE_TAB) {
+      camera.noTarget();
+
+
     }
   }
 
@@ -1300,7 +1334,7 @@ void Engine::update(f64 dt) {
       scale *= simulationData.planetScale;
     }
     body->update(simulationData.timeScale * dt);
-    body->entityData.position = body->getPosition();
+    body->entityData.position = body->getPosition(simulationData.distanceScale);
 
     glm::mat4 model = glm::mat4(1.f);
     model           = glm::translate(model, body->entityData.position);

@@ -113,6 +113,7 @@ public:
   ImguiContext  imguiContext;
 
   Camera camera;
+  u32 targetIndex;
 
   SimulationData simulationData;
 
