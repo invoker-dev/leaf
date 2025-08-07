@@ -7,7 +7,7 @@
 // TODO: Normal maps
 // TODO: Various Post processing
 // CONTINOUS TODO: Real Architecture
-#include "entity.h"
+#include <entity.h>
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_gpu.h>
@@ -540,7 +540,8 @@ void Engine::drawImGUI(VkCommandBuffer cmd, VkImageView targetImage) {
   if (ImGui::CollapsingHeader("simulationData.planets")) {
 
     ImGui::DragFloat("planet scale", &simulationData.planetScale);
-    ImGui::Text("Camera target: %d", simulationData.bodies[targetIndex].textureIndex);
+    ImGui::Text("Camera target: %d",
+                simulationData.bodies[targetIndex].textureIndex);
 
     float logMin   = log10f(1e-9f);
     float logMax   = log10f(1);
@@ -851,6 +852,7 @@ void Engine::drawGeometry(VkCommandBuffer cmd) {
       (GPUSceneData*)getCurrentFrame().gpuBuffer.allocation->GetMappedData();
   mapped->view       = camera.getViewMatrix();
   mapped->projection = camera.getProjectionMatrix();
+  mapped->position   = camera.position;
 
   VkViewport viewport = {};
 
@@ -882,7 +884,9 @@ void Engine::drawGeometry(VkCommandBuffer cmd) {
     mesh.color               = entity->color;
     mesh.blendFactor         = entity->tint;
     mesh.vertexBufferAddress = entity->mesh.meshBuffers.vertexBufferAddress;
-    mesh.textureIndex        = simulationData.bodies[i].textureIndex;
+
+    mesh.textureIndex = simulationData.bodies[i].textureIndex;
+    mesh.lit = (u32)simulationData.bodies[i].isPlanet;
 
     VkPushConstantsInfo vertPushInfo = {};
     vertPushInfo.sType               = VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO;
@@ -1153,6 +1157,11 @@ void Engine::initSolarSystem() {
   sun.isPlanet     = false;
   simulationData.bodies.push_back(sun);
 
+  simulationData.sunlight = {
+      .position = glm::vec3(0),
+      .color    = glm::vec3(1.f, 0.969f, 0.919f),
+  };
+
   Body mercury         = {};
   mercury.textureIndex = textureData.imageMap["mercury"];
   mercury.isPlanet     = true;
@@ -1294,9 +1303,9 @@ void Engine::processEvent(SDL_Event& e) {
       SDL_SetWindowRelativeMouseMode(surface.window, surface.captureMouse);
     }
     if (e.key.scancode == SDL_SCANCODE_Q) {
-      if(targetIndex <= 0) {
+      if (targetIndex <= 0) {
         targetIndex = simulationData.bodies.size() - 1;
-      } else  {
+      } else {
         targetIndex--;
       }
 
@@ -1305,7 +1314,7 @@ void Engine::processEvent(SDL_Event& e) {
 
     if (e.key.scancode == SDL_SCANCODE_E) {
 
-      if(targetIndex >= simulationData.bodies.size() - 1) {
+      if (targetIndex >= simulationData.bodies.size() - 1) {
         targetIndex = 0;
       } else {
         targetIndex++;
@@ -1314,8 +1323,6 @@ void Engine::processEvent(SDL_Event& e) {
     }
     if (e.key.scancode == SDL_SCANCODE_TAB) {
       camera.noTarget();
-
-
     }
   }
 
@@ -1345,6 +1352,9 @@ void Engine::update(f64 dt) {
 
     body->entityData.model = model;
   }
+
+  simulationData.sunlight.position =
+      simulationData.bodies[0].getPosition(simulationData.distanceScale);
 
   int width, height;
   SDL_GetWindowSizeInPixels(surface.window, &width, &height);

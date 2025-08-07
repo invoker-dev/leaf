@@ -71,14 +71,13 @@ struct alignas(16) VertPushData {
   f32             blendFactor;
   VkDeviceAddress vertexBufferAddress;
   int             textureIndex;
+  int             lit;
 };
 
 struct alignas(16) GPUSceneData {
   glm::mat4 view;
   glm::mat4 projection;
-  // glm::vec4 ambientColor;
-  // glm::vec4 sunlightDirection;
-  // glm::vec4 sunlightColor;
+  glm::vec3 position;
 };
 
 struct GeoSurface {
@@ -95,4 +94,9 @@ struct MeshAsset {
 
   VkBuffer& getIndexBuffer() { return meshBuffers.indexBuffer.buffer; }
   VkBuffer& getVertexBuffer() { return meshBuffers.vertexBuffer.buffer; }
+};
+
+struct alignas(16) Light {
+  glm::vec3 position;
+  glm::vec3 color;
 };

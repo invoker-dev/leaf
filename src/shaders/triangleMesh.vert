@@ -5,6 +5,10 @@ layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec2 outUV;
 layout(location = 2) flat out int textureIndex;
 
+layout(location = 3) out vec3 fragNormal;
+layout(location = 4) out vec3 fragPos;
+layout(location = 5) flat out int lit;
+
 struct Vertex {
     vec3 position;
     float uv_x;
@@ -13,13 +17,16 @@ struct Vertex {
     vec4 color;
 };
 
-layout(buffer_reference, std430) readonly buffer VertexBuffer {
+layout(buffer_reference, std430) readonly buffer VertexBuffer
+{
     Vertex vertices[];
 };
 
-layout(binding = 0) uniform CameraUBO {
+layout(binding = 0) uniform GPUSceneData
+{
     mat4 view;
     mat4 projection;
+    vec3 position;
 } camera;
 
 layout(push_constant) uniform constants
@@ -29,19 +36,23 @@ layout(push_constant) uniform constants
     float blendFactor;
     VertexBuffer vertexBuffer;
     int textureIndex;
+    int lit;
+
 } pushConstants;
 
 void main()
 {
-    //load vertex data from device adress
     Vertex v = pushConstants.vertexBuffer.vertices[gl_VertexIndex];
 
-    //output data
-    gl_Position = camera.projection * camera.view * pushConstants.model *
-            vec4(v.position, 1.f);
-    outColor = mix(v.color, pushConstants.color, pushConstants.blendFactor);
-    outUV.x = v.uv_x;
-    outUV.y = v.uv_y;
+    vec4 worldPos = pushConstants.model * vec4(v.position, 1.0);
+    gl_Position = camera.projection * camera.view * worldPos;
 
+    outColor = mix(v.color, pushConstants.color, pushConstants.blendFactor);
+    outUV = vec2(v.uv_x, v.uv_y);
     textureIndex = pushConstants.textureIndex;
+
+    fragNormal = mat3(transpose(inverse(pushConstants.model))) * v.normal;
+    fragPos = vec3(worldPos);
+
+    lit = pushConstants.lit;
 }

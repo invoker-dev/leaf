@@ -90,6 +90,7 @@ struct SimulationData {
   f32               planetScale   = 1;
   f32               distanceScale = 1e-8;
   f32               timeScale     = 1;
+  Light             sunlight;
 };
 
 class Engine {
@@ -113,7 +114,7 @@ public:
   ImguiContext  imguiContext;
 
   Camera camera;
-  u32 targetIndex;
+  u32    targetIndex;
 
   SimulationData simulationData;
 
